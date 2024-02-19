@@ -183,7 +183,6 @@ void main()
         //float farDepth = 8.0; // The depth value at which we want the output value to be 0
         float disparity = ((baseline * focal_length) / depth);
         color = vec3(disparity, disparity, disparity);
-
         //// Use the mapping function to get the output value in 16-bit range
         //float depth16bit = mapDepthTo16Bit(depth, nearDepth, farDepth);
 
