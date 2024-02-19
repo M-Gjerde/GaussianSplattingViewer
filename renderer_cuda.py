@@ -92,7 +92,9 @@ def gaus_cuda_from_cpu(gau: util_gau) -> GaussianDataCUDA:
         opacity = torch.tensor(gau.opacity).float().cuda().requires_grad_(False),
         sh = torch.tensor(gau.sh).float().cuda().requires_grad_(False)
     )
+    a = len(gaus)
     gaus.sh = gaus.sh.reshape(len(gaus), -1, 3).contiguous()
+
     return gaus
     
 

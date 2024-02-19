@@ -4,35 +4,48 @@ import numpy as np
 import glm
 import ctypes
 
+
 class Camera:
     def __init__(self, h, w):
-        self.znear = 0.01
+        self.orientation = glm.angleAxis(glm.radians(30.0), glm.vec3(0.0, 0.0, 1.0))
+        self.azimuth = 60
+        self.elevation = 30
+        self.arcball_translate = glm.vec3(0.0, 0.0, 0.0)
+        self.znear = 0.0001
         self.zfar = 100
         self.h = h
         self.w = w
-        self.fovy = np.pi / 2
+        self.fovy = np.pi / 3
         self.position = np.array([0.0, 0.0, 3.0]).astype(np.float32)
+        self.zoomVal = 1.0
         self.target = np.array([0.0, 0.0, 0.0]).astype(np.float32)
         self.up = np.array([0.0, -1.0, 0.0]).astype(np.float32)
+        self.camera_up = glm.vec3(0.0, -1.0, 0.0)
+        self.camera_front = glm.vec3(0.0, 0.0, -1.0)
+        self.camera_position = glm.vec3(-3.0, 0.0, 1.5)
         self.yaw = -np.pi / 2
         self.pitch = 0
-        
+
         self.is_pose_dirty = True
         self.is_intrin_dirty = True
-        
+
         self.last_x = 640
         self.last_y = 360
         self.first_mouse = True
-        
+
         self.is_leftmouse_pressed = False
         self.is_rightmouse_pressed = False
-        
-        self.rot_sensitivity = 0.02
+        self.is_middlemouse_pressed = False
+
+        self.rot_sensitivity = 0.020
         self.trans_sensitivity = 0.01
         self.zoom_sensitivity = 0.08
         self.roll_sensitivity = 0.03
         self.target_dist = 3.
-    
+
+        self.mouse_pos_x = 0
+        self.mouse_pos_y = 0
+
     def _global_rot_mat(self):
         x = np.array([1, 0, 0])
         z = np.cross(x, self.up)
@@ -40,8 +53,16 @@ class Camera:
         x = np.cross(self.up, z)
         return np.stack([x, self.up, z], axis=-1)
 
-    def get_view_matrix(self):
-        return np.array(glm.lookAt(self.position, self.target, self.up))
+    def get_view_matrix(self, arcball=True, front=None, pos=None, up=None, arcball_translate=None):
+        if arcball:
+            if front is not None:
+                target = pos + front
+                return np.array(glm.lookAt(pos, target, up))
+            else:
+                target = self.camera_position + self.camera_front
+                return np.array(glm.lookAt(self.camera_position, target, self.camera_up))
+        else:
+            return np.array(glm.lookAt(self.position, self.target, self.up))
 
     def get_project_matrix(self):
         # htanx, htany, focal = self.get_htanfovxy_focal()
@@ -70,6 +91,16 @@ class Camera:
         return self.h / (2 * np.tan(self.fovy / 2))
 
     def process_mouse(self, xpos, ypos):
+        dx = (self.mouse_pos_x - xpos) * self.rot_sensitivity * 10;
+        dy = (self.mouse_pos_y - ypos) * self.rot_sensitivity * 10;
+
+        if self.is_leftmouse_pressed:
+            self.azimuth += dy
+            self.elevation += dx
+
+        self.mouse_pos_x = xpos
+        self.mouse_pos_y = ypos
+
         if self.first_mouse:
             self.last_x = xpos
             self.last_y = ypos
@@ -81,39 +112,58 @@ class Camera:
         self.last_y = ypos
 
         if self.is_leftmouse_pressed:
+            yawRotation = glm.angleAxis(glm.radians(dx / 2.0), self.camera_up)
+            self.orientation = yawRotation * self.orientation
+
+            cameraRight = glm.cross(self.camera_up, self.camera_front)
+            pitchRotation = glm.angleAxis(glm.radians(-dy/2.0), cameraRight)
+
+            self.orientation = pitchRotation * self.orientation
+            self.orientation = glm.normalize(self.orientation)
+
+            dir = glm.mat3_cast(self.orientation) * glm.vec3(1.0, 0.0, 0.0)
+            self.camera_front = dir
+
+        if self.is_leftmouse_pressed:
             self.yaw += xoffset * self.rot_sensitivity
             self.pitch += yoffset * self.rot_sensitivity
 
             self.pitch = np.clip(self.pitch, -np.pi / 2, np.pi / 2)
 
-            front = np.array([np.cos(self.yaw) * np.cos(self.pitch), 
-                            np.sin(self.pitch), np.sin(self.yaw) * 
-                            np.cos(self.pitch)])
+            front = np.array([np.cos(self.yaw) * np.cos(self.pitch),
+                              np.sin(self.pitch), np.sin(self.yaw) *
+                              np.cos(self.pitch)])
             front = self._global_rot_mat() @ front.reshape(3, 1)
             front = front[:, 0]
             self.position[:] = - front * np.linalg.norm(self.position - self.target) + self.target
-            
             self.is_pose_dirty = True
-        
+
         if self.is_rightmouse_pressed:
-            front = self.target - self.position
-            front = front / np.linalg.norm(front)
-            right = np.cross(self.up, front)
-            self.position += right * xoffset * self.trans_sensitivity
-            self.target += right * xoffset * self.trans_sensitivity
-            cam_up = np.cross(right, front)
-            self.position += cam_up * yoffset * self.trans_sensitivity
-            self.target += cam_up * yoffset * self.trans_sensitivity
-            
+            # front = self.target - self.position
+            # front = front / np.linalg.norm(front)
+            # right = np.cross(self.up, front)
+            # self.position += right * xoffset * self.trans_sensitivity
+            # self.target += right * xoffset * self.trans_sensitivity
+            # cam_up = np.cross(right, front)
+            # self.position += cam_up * yoffset * self.trans_sensitivity
+            # self.target += cam_up * yoffset * self.trans_sensitivity
+            rotM = glm.mat4(1.0)
+            rotM = glm.rotate(rotM, glm.radians(self.azimuth), glm.vec3(1.0, 0.0, 0.0))
+            rotM = glm.rotate(rotM, glm.radians(self.elevation), glm.vec3(0.0, 0.0, 1.0))
+
+            delta = glm.vec3(-dx * 0.05, dy * 0.05, 0.0)
+            rot = glm.vec4(delta, 1.0) @ rotM
+            self.arcball_translate -= -glm.vec3(rot)
             self.is_pose_dirty = True
-        
+
     def process_wheel(self, dx, dy):
+        self.zoomVal += (dy * 0.20)
         front = self.target - self.position
         front = front / np.linalg.norm(front)
         self.position += front * dy * self.zoom_sensitivity
         self.target += front * dy * self.zoom_sensitivity
         self.is_pose_dirty = True
-        
+
     def process_roll_key(self, d):
         front = self.target - self.position
         right = np.cross(front, self.up)
@@ -129,7 +179,7 @@ class Camera:
         _dir = self.target - self.position
         _dir = _dir / np.linalg.norm(_dir)
         self.target = self.position + _dir * self.target_dist
-        
+
     def update_resolution(self, height, width):
         self.h = height
         self.w = width
@@ -137,7 +187,7 @@ class Camera:
 
 
 def load_shaders(vs, fs):
-    vertex_shader = open(vs, 'r').read()        
+    vertex_shader = open(vs, 'r').read()
     fragment_shader = open(fs, 'r').read()
 
     active_shader = shaders.compileProgram(
@@ -173,9 +223,10 @@ def set_attributes(program, keys, values, vao=None, buffer_ids=None):
         pos = glGetAttribLocation(program, key)
         glVertexAttribPointer(pos, length, GL_FLOAT, False, 0, None)
         glEnableVertexAttribArray(pos)
-    
-    glBindBuffer(GL_ARRAY_BUFFER,0)
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vao, buffer_ids
+
 
 def set_attribute(program, key, value, vao=None, buffer_id=None):
     glUseProgram(program)
@@ -191,8 +242,9 @@ def set_attribute(program, key, value, vao=None, buffer_id=None):
     pos = glGetAttribLocation(program, key)
     glVertexAttribPointer(pos, length, GL_FLOAT, False, 0, None)
     glEnableVertexAttribArray(pos)
-    glBindBuffer(GL_ARRAY_BUFFER,0)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vao, buffer_id
+
 
 def set_attribute_instanced(program, key, value, instance_stride=1, vao=None, buffer_id=None):
     glUseProgram(program)
@@ -209,8 +261,9 @@ def set_attribute_instanced(program, key, value, instance_stride=1, vao=None, bu
     glVertexAttribPointer(pos, length, GL_FLOAT, False, 0, None)
     glEnableVertexAttribArray(pos)
     glVertexAttribDivisor(pos, instance_stride)
-    glBindBuffer(GL_ARRAY_BUFFER,0)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vao, buffer_id
+
 
 def set_storage_buffer_data(program, key, value: np.ndarray, bind_idx, vao=None, buffer_id=None):
     glUseProgram(program)
@@ -218,7 +271,7 @@ def set_storage_buffer_data(program, key, value: np.ndarray, bind_idx, vao=None,
     #     vao = glGenVertexArrays(1)
     if vao is not None:
         glBindVertexArray(vao)
-    
+
     if buffer_id is None:
         buffer_id = glGenBuffers(1)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, buffer_id)
@@ -228,6 +281,7 @@ def set_storage_buffer_data(program, key, value: np.ndarray, bind_idx, vao=None,
     # glShaderStorageBlockBinding(program, pos, pos)  # TODO: ???
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
+
 def set_faces_tovao(vao, faces: np.ndarray):
     # faces
     glBindVertexArray(vao)
@@ -235,6 +289,7 @@ def set_faces_tovao(vao, faces: np.ndarray):
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, element_buffer)
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, faces.nbytes, faces, GL_STATIC_DRAW)
     return element_buffer
+
 
 def set_gl_bindings(vertices, faces):
     # vertices
@@ -256,6 +311,7 @@ def set_gl_bindings(vertices, faces):
     # glVertexAttribPointer(2, 3, GL_FLOAT, False, 36, ctypes.c_void_p(12))
     # glEnableVertexAttribArray(2)
 
+
 def set_uniform_mat4(shader, content, name):
     glUseProgram(shader)
     if isinstance(content, glm.mat4):
@@ -263,25 +319,28 @@ def set_uniform_mat4(shader, content, name):
     else:
         content = content.T
     glUniformMatrix4fv(
-        glGetUniformLocation(shader, name), 
+        glGetUniformLocation(shader, name),
         1,
         GL_FALSE,
         content.astype(np.float32)
     )
 
+
 def set_uniform_1f(shader, content, name):
     glUseProgram(shader)
     glUniform1f(
-        glGetUniformLocation(shader, name), 
+        glGetUniformLocation(shader, name),
         content,
     )
+
 
 def set_uniform_1int(shader, content, name):
     glUseProgram(shader)
     glUniform1i(
-        glGetUniformLocation(shader, name), 
+        glGetUniformLocation(shader, name),
         content
     )
+
 
 def set_uniform_v3f(shader, contents, name):
     glUseProgram(shader)
@@ -291,12 +350,14 @@ def set_uniform_v3f(shader, contents, name):
         contents
     )
 
+
 def set_uniform_v3(shader, contents, name):
     glUseProgram(shader)
     glUniform3f(
         glGetUniformLocation(shader, name),
         contents[0], contents[1], contents[2]
     )
+
 
 def set_uniform_v1f(shader, contents, name):
     glUseProgram(shader)
@@ -305,13 +366,15 @@ def set_uniform_v1f(shader, contents, name):
         len(contents),
         contents
     )
-    
+
+
 def set_uniform_v2(shader, contents, name):
     glUseProgram(shader)
     glUniform2f(
         glGetUniformLocation(shader, name),
         contents[0], contents[1]
     )
+
 
 def set_texture2d(img, texid=None):
     h, w, c = img.shape
@@ -320,7 +383,7 @@ def set_texture2d(img, texid=None):
         texid = glGenTextures(1)
     glBindTexture(GL_TEXTURE_2D, texid)
     glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGB, w, h, 0,   
+        GL_TEXTURE_2D, 0, GL_RGB, w, h, 0,
         GL_RGB, GL_UNSIGNED_BYTE, img
     )
     glActiveTexture(GL_TEXTURE0)  # can be removed
@@ -331,6 +394,7 @@ def set_texture2d(img, texid=None):
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER)
     return texid
 
+
 def update_texture2d(img, texid, offset):
     x1, y1 = offset
     h, w = img.shape[:2]
@@ -339,5 +403,3 @@ def update_texture2d(img, texid, offset):
         GL_TEXTURE_2D, 0, x1, y1, w, h,
         GL_RGB, GL_UNSIGNED_BYTE, img
     )
-
-

@@ -6,6 +6,7 @@ import numpy as np
 _sort_buffer_xyz = None
 _sort_buffer_gausid = None  # used to tell whether gaussian is reloaded
 
+
 def _sort_gaussian_cpu(gaus, view_mat):
     xyz = np.asarray(gaus.xyz)
     view_mat = np.asarray(view_mat)
@@ -33,7 +34,7 @@ def _sort_gaussian_cupy(gaus, view_mat):
     index = cp.argsort(depth)
     index = index.astype(cp.int32).reshape(-1, 1)
 
-    index = cp.asnumpy(index) # convert to numpy
+    index = cp.asnumpy(index)  # convert to numpy
     return index
 
 
@@ -56,6 +57,7 @@ def _sort_gaussian_torch(gaus, view_mat):
 _sort_gaussian = None
 try:
     import torch
+
     if not torch.cuda.is_available():
         raise ImportError
     print("Detect torch cuda installed, will use torch as sorting backend")
@@ -63,6 +65,7 @@ try:
 except ImportError:
     try:
         import cupy as cp
+
         print("Detect cupy installed, will use cupy as sorting backend")
         _sort_gaussian = _sort_gaussian_cupy
     except ImportError:
@@ -75,25 +78,25 @@ class GaussianRenderBase:
 
     def update_gaussian_data(self, gaus: util_gau.GaussianData):
         raise NotImplementedError()
-    
+
     def sort_and_update(self):
         raise NotImplementedError()
 
     def set_scale_modifier(self, modifier: float):
         raise NotImplementedError()
-    
+
     def set_render_mod(self, mod: int):
         raise NotImplementedError()
-    
+
     def update_camera_pose(self, camera: util.Camera):
         raise NotImplementedError()
 
     def update_camera_intrin(self, camera: util.Camera):
         raise NotImplementedError()
-    
+
     def draw(self):
         raise NotImplementedError()
-    
+
     def set_render_reso(self, w, h):
         raise NotImplementedError()
 
@@ -106,8 +109,8 @@ class OpenGLRenderer(GaussianRenderBase):
 
         # Vertex data for a quad
         self.quad_v = np.array([
-            -1,  1,
-            1,  1,
+            -1, 1,
+            1, 1,
             1, -1,
             -1, -1
         ], dtype=np.float32).reshape(4, 2)
@@ -115,7 +118,7 @@ class OpenGLRenderer(GaussianRenderBase):
             0, 1, 2,
             0, 2, 3
         ], dtype=np.uint32).reshape(2, 3)
-        
+
         # load quad geometry
         vao, buffer_id = util.set_attributes(self.program, ["position"], [self.quad_v])
         util.set_faces_tovao(vao, self.quad_f)
@@ -133,11 +136,15 @@ class OpenGLRenderer(GaussianRenderBase):
         util.set_storage_buffer_data(self.program, "gaussian_data", gaussian_data, bind_idx=0)
         util.set_uniform_1int(self.program, gaus.sh_dim, "sh_dim")
 
-    def sort_and_update(self, camera: util.Camera):
-        index = _sort_gaussian(self.gaussians, camera.get_view_matrix())
+    def sort_and_update(self, camera: util.Camera, use_file, pose):
+        if use_file:
+            index =_sort_gaussian(self.gaussians, camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"]))
+        else:
+            index = _sort_gaussian(self.gaussians, camera.get_view_matrix(True))
+
         util.set_storage_buffer_data(self.program, "gi", index, bind_idx=1)
         return
-   
+
     def set_scale_modifier(self, modifier):
         util.set_uniform_1f(self.program, modifier, "scale_modifier")
 
@@ -147,8 +154,12 @@ class OpenGLRenderer(GaussianRenderBase):
     def set_render_reso(self, w, h):
         gl.glViewport(0, 0, w, h)
 
-    def update_camera_pose(self, camera: util.Camera):
-        view_mat = camera.get_view_matrix()
+    def update_camera_pose(self, camera: util.Camera, use_file, pose):
+        if use_file:
+            view_mat = camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"])
+        else:
+            view_mat = camera.get_view_matrix(True)
+
         util.set_uniform_mat4(self.program, view_mat, "view_matrix")
         util.set_uniform_v3(self.program, camera.position, "cam_pos")
 
