@@ -31,6 +31,9 @@ pose_index = 0
 use_file = False
 manual_save = False
 switch_lr_pose = False
+theta = 45
+phi = 45
+radius = 5
 
 BACKEND_OGL = 0
 BACKEND_CUDA = 1
@@ -80,6 +83,41 @@ def cursor_pos_callback(window, xpos, ypos):
     g_camera.process_mouse(xpos, ypos)
 
 
+def generate_sphere_positions(radius_l, theta_l, phi_l):
+    positions = []
+    theta_l = glm.radians(theta_l)
+    phi_l = glm.radians(phi_l)
+    x = radius_l * np.sin(theta_l) * np.cos(phi_l)
+    y = radius_l * np.sin(theta_l) * np.sin(phi_l)
+    z = radius_l * np.cos(theta_l)
+
+    position = glm.vec3(x, y, z)
+    front_vector = -glm.normalize(position)  # Normalize and invert to face origin
+    up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
+
+    # Right vector:
+    right = glm.normalize(glm.cross(front_vector, up_vector))
+    baseline = 0.193001
+
+    right_pos = position + (right * baseline)
+    res = glm.distance(position, right_pos)
+
+    pose = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": position
+    }
+
+
+    poseRight = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": right_pos
+    }
+
+    return pose, poseRight
+
+
 def mouse_button_callback(window, button, action, mod):
     if imgui.get_io().want_capture_mouse:
         return
@@ -112,7 +150,8 @@ def wheel_callback(window, dx, dy):
 
 
 def key_callback(window, key, scancode, action, mods):
-    global pose_index, use_file, manual_save, switch_lr_pose
+    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius
+    speed = 5
     if action == glfw.REPEAT or action == glfw.PRESS:
         if key == glfw.KEY_Q:
             g_camera.process_roll_key(1)
@@ -127,12 +166,22 @@ def key_callback(window, key, scancode, action, mods):
         elif key == glfw.KEY_P:
             use_file = not use_file
         elif key == glfw.KEY_UP or key == glfw.KEY_W:
-            g_camera.camera_position += g_camera.camera_front;
+            g_camera.camera_position += g_camera.camera_front
+            theta -= 1.0 * speed
         elif key == glfw.KEY_DOWN or key == glfw.KEY_S:
-            g_camera.camera_position -= g_camera.camera_front;
+            theta += 1.0 * speed
+            g_camera.camera_position -= g_camera.camera_front
         elif key == glfw.KEY_LEFT or key == glfw.KEY_A:
+            phi += 1.0 * speed
             g_camera.camera_position -= glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
         elif key == glfw.KEY_RIGHT or key == glfw.KEY_D:
+            phi -= 1.0 * speed
+            g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
+        elif key == glfw.KEY_0:
+            radius += (1.0 / speed)
+            g_camera.camera_position -= glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
+        elif key == glfw.KEY_1:
+            radius -= (1.0 / speed)
             g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
 
 
@@ -215,7 +264,7 @@ def read_camera_poses_from_csv(csv_file_path):
 def main():
     global g_camera, g_renderer, g_renderer_list, g_renderer_idx, g_scale_modifier, g_auto_sort, \
         g_show_control_win, g_show_help_win, g_show_camera_win, \
-        g_render_mode, g_render_mode_tables, pose_index, manual_save, switch_lr_pose
+        g_render_mode, g_render_mode_tables, pose_index, manual_save, switch_lr_pose, theta, phi, radius
 
     imgui.create_context()
     if args.hidpi:
@@ -235,8 +284,8 @@ def main():
     # init renderer
     g_renderer_list[BACKEND_OGL] = OpenGLRenderer(g_camera.w, g_camera.h)
 
-    from renderer_cuda import CUDARenderer
-    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
+#    from renderer_cuda import CUDARenderer
+#    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
 
     g_renderer_idx = BACKEND_OGL
     g_renderer = g_renderer_list[g_renderer_idx]
@@ -279,45 +328,8 @@ def main():
         with open(csv_file_path, "w") as file:
             file.close()
     camera_poses = read_camera_poses_from_csv(csv_file_path)
+    radius = 5
 
-    if len(camera_poses) < 1:
-        camera_front = glm.vec3(float(0), float(0), float(0))
-        camera_up = glm.vec3(float(0), float(0), float(1))
-        camera_position = glm.vec3(float(-3), float(0), float(1))
-
-        # Convert row data to a dictionary and append to the list
-        pose = {
-            "camera_front": camera_front,
-            "camera_up": camera_up,
-            "camera_position": camera_position
-        }
-        camera_poses.append(pose)
-        print(camera_poses)
-
-    saved = [False for x in camera_poses]
-    camera_right_poses = []
-    for pose in camera_poses:
-        front = pose["camera_front"]
-        up = pose["camera_up"]
-        pos = pose["camera_position"]
-
-        # Right vector:
-        right = glm.normalize(glm.cross(front, up))
-        baseline = 0.193001
-
-        right_pos = pos + (right * baseline)
-
-        res = glm.distance(pos, right_pos)
-
-        print(f"Absolute baseline: {res}")
-
-        pose = {
-            "camera_front": front,
-            "camera_up": up,
-            "camera_position": right_pos
-        }
-
-        camera_right_poses.append(pose)
 
     if not os.path.exists("out"):
         os.mkdir("out")
@@ -330,8 +342,9 @@ def main():
     # settings
 
     while not glfw.window_should_close(window):
-        pose = camera_poses[pose_index]
-        poseRight = camera_right_poses[pose_index]
+
+        pose, poseRight = generate_sphere_positions(radius, theta, phi)
+
         glfw.poll_events()
         impl.process_inputs()
         imgui.new_frame()
@@ -348,7 +361,7 @@ def main():
 
         g_renderer.draw()
 
-        if saved[pose_index] is False or manual_save:
+        if manual_save:
             ######### LEFT FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -404,7 +417,7 @@ def main():
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
-            saved[pose_index] = True
+            #saved[pose_index] = True
             manual_save = False
 
         # imgui ui
