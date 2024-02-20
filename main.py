@@ -1,4 +1,5 @@
 import math
+import time
 
 import glfw
 import OpenGL.GL as gl
@@ -25,7 +26,7 @@ sys.path.append(dir_path)
 # Change the current working directory to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-#g_camera = util.Camera(1988, 2964) # middlebury
+# g_camera = util.Camera(1988, 2964) # middlebury
 g_camera = util.Camera(1280, 1920)
 pose_index = 0
 use_file = False
@@ -85,6 +86,35 @@ def cursor_pos_callback(window, xpos, ypos):
     g_camera.process_mouse(xpos, ypos)
 
 
+def load_camera_positions(camera_pose):
+    qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
+    x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
+
+    position = glm.vec3(x, y, z)
+    front_vector = -glm.normalize(position)  # Normalize and invert to face origin
+    up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
+
+    # Right vector:
+    right = glm.normalize(glm.cross(front_vector, up_vector))
+    baseline = 0.193001
+
+    right_pos = position + (right * baseline)
+    res = glm.distance(position, right_pos)
+
+    pose_left = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": position
+    }
+
+    pose_right = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": right_pos
+    }
+    return pose_left, pose_right
+
+
 def generate_sphere_positions(radius_l, theta_l, phi_l):
     positions = []
     theta_l = glm.radians(theta_l)
@@ -109,7 +139,6 @@ def generate_sphere_positions(radius_l, theta_l, phi_l):
         "camera_up": up_vector,
         "camera_position": position
     }
-
 
     poseRight = {
         "camera_front": front_vector,
@@ -193,6 +222,7 @@ def key_callback(window, key, scancode, action, mods):
             g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
     print(f"theta: {theta}, phi: {phi}, radius: {radius}")
 
+
 def update_camera_pose_lazy():
     if g_camera.is_pose_dirty:
         g_renderer.update_camera_pose(g_camera)
@@ -269,9 +299,30 @@ def read_camera_poses_from_csv(csv_file_path):
     return poses_list
 
 
+last_update_time = 0
+
+
 def update_sphere_positions(radius, theta, phi):
-    theta += 5
-    phi = np.floor(theta / 360)
+    global last_update_time
+
+    # Get the current time
+    current_time = time.time()
+
+    # Check if at least 0.03 seconds have passed since the last update
+    if current_time - last_update_time >= 0.03:
+        # Update the last update time
+        last_update_time = current_time
+
+        # Perform the update
+        theta += 5
+        phi = np.floor(theta / 360) * 5
+
+        if phi > 35:
+            phi = 0
+    else:
+        # If not enough time has passed, do not update theta and phi
+        # Just return the current values
+        pass
 
     return radius, theta, phi
 
@@ -299,8 +350,8 @@ def main():
     # init renderer
     g_renderer_list[BACKEND_OGL] = OpenGLRenderer(g_camera.w, g_camera.h)
 
-#    from renderer_cuda import CUDARenderer
-#    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
+    #    from renderer_cuda import CUDARenderer
+    #    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
 
     g_renderer_idx = BACKEND_OGL
     g_renderer = g_renderer_list[g_renderer_idx]
@@ -345,7 +396,6 @@ def main():
     camera_poses = read_camera_poses_from_csv(csv_file_path)
     radius = 5
 
-
     if not os.path.exists("out"):
         os.mkdir("out")
     if not os.path.exists("out/right"):
@@ -356,11 +406,34 @@ def main():
         os.mkdir("out/left")
     # settings
 
-    while not glfw.window_should_close(window):
-        if animate:
-            radius, theta, phi = update_sphere_positions(radius, theta, phi)
+    filePath = "C:\\Users\\mgjer\\PycharmProjects\\gaussian-splatting\\data\\nerf_supervised\\poses\\colmap_text\\images.txt"
+    file = open(filePath, "r")
+    camera_poses = []
+    line_no = 0
+    for line in file.readlines():
+        if line.startswith("#"):
+            continue
+        if line_no % 2 == 1:
+            line_no += 1
+            continue
 
-        pose, poseRight = generate_sphere_positions(radius, theta, phi)
+        elements = line.split()
+        # Extract the needed information
+        # Assuming the first 8 values are IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ
+        image_id, qw, qx, qy, qz, x, y, z, camera_id, fileName = elements
+        camera_poses.append(elements)
+
+        line_no += 1
+    print(f"Found correct number of camera_poses: {len(camera_poses) == 100}")
+    pose_id = 0
+    while not glfw.window_should_close(window):
+
+        # if animate:
+        #    radius, theta, phi = update_sphere_positions(radius, theta, phi)
+        #
+
+        # pose, poseRight = generate_sphere_positions(radius, theta, phi)
+        pose, poseRight = load_camera_positions(camera_poses[pose_id])
 
         glfw.poll_events()
         impl.process_inputs()
@@ -423,7 +496,7 @@ def main():
             g_renderer.draw()
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure FBO is bound if not already
-            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED , gl.GL_UNSIGNED_SHORT)
+            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_UNSIGNED_SHORT)
 
             # Convert pixels to a numpy array and then to an image
             image = Image.frombytes("I;16", (width, height), pixels)
@@ -434,7 +507,7 @@ def main():
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
-            #saved[pose_index] = True
+            # saved[pose_index] = True
             manual_save = False
 
         # imgui ui

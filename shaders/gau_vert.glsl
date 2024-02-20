@@ -177,8 +177,8 @@ void main()
 	if (render_mod == -1)
 	{
 	    float baseline = 0.193001;
-	    float focal_length = 4649.505977743847;
-        float depth = (-g_pos_view.z + 1) * 1000; // Convert from view space to a positive depth value
+	    float focal_length = 3437.4740325082107;
+        float depth = (-g_pos_view.z) * 1000; // Convert from view space to a positive depth value
         //float nearDepth = 0.0; // The depth value at which we want the maximum output value
         //float farDepth = 8.0; // The depth value at which we want the output value to be 0
         float disparity = ((baseline * focal_length) / depth);
