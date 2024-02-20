@@ -31,9 +31,11 @@ pose_index = 0
 use_file = False
 manual_save = False
 switch_lr_pose = False
-theta = 45
-phi = 45
-radius = 5
+theta = 0
+phi = 0
+radius = 3
+animate = False
+record = False
 
 BACKEND_OGL = 0
 BACKEND_CUDA = 1
@@ -150,7 +152,7 @@ def wheel_callback(window, dx, dy):
 
 
 def key_callback(window, key, scancode, action, mods):
-    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius
+    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius, animate, record
     speed = 5
     if action == glfw.REPEAT or action == glfw.PRESS:
         if key == glfw.KEY_Q:
@@ -183,7 +185,13 @@ def key_callback(window, key, scancode, action, mods):
         elif key == glfw.KEY_1:
             radius -= (1.0 / speed)
             g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
-
+        elif key == glfw.KEY_3:
+            animate = not animate
+            g_camera.camera_position -= glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
+        elif key == glfw.KEY_4:
+            record = not record
+            g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
+    print(f"theta: {theta}, phi: {phi}, radius: {radius}")
 
 def update_camera_pose_lazy():
     if g_camera.is_pose_dirty:
@@ -259,6 +267,13 @@ def read_camera_poses_from_csv(csv_file_path):
                     continue  # Skip rows with conversion errors
 
     return poses_list
+
+
+def update_sphere_positions(radius, theta, phi):
+    theta += 5
+    phi = np.floor(theta / 360)
+
+    return radius, theta, phi
 
 
 def main():
@@ -342,6 +357,8 @@ def main():
     # settings
 
     while not glfw.window_should_close(window):
+        if animate:
+            radius, theta, phi = update_sphere_positions(radius, theta, phi)
 
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
