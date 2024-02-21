@@ -157,7 +157,7 @@ class Camera:
             self.is_pose_dirty = True
 
     def process_wheel(self, dx, dy):
-        self.zoomVal += (dy * 0.20)
+        self.zoomVal += (dy * 0.05)
         front = self.target - self.position
         front = front / np.linalg.norm(front)
         self.position += front * dy * self.zoom_sensitivity

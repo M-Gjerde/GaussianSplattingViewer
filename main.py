@@ -26,8 +26,8 @@ sys.path.append(dir_path)
 # Change the current working directory to the script's directory
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# g_camera = util.Camera(1988, 2964) # middlebury
-g_camera = util.Camera(1280, 1920)
+g_camera = None # middlebury
+#g_camera = util.Camera(1280, 1920)
 pose_index = 0
 use_file = False
 manual_save = False
@@ -37,6 +37,7 @@ phi = 0
 radius = 3
 animate = False
 record = False
+new_camera_pos = False
 
 BACKEND_OGL = 0
 BACKEND_CUDA = 1
@@ -45,7 +46,7 @@ g_renderer_list = [
 ]
 g_renderer_idx = BACKEND_OGL
 g_renderer = g_renderer_list[g_renderer_idx]
-g_scale_modifier = 1.
+g_scale_modifier = 1.3
 g_auto_sort = True
 g_show_control_win = True
 g_show_help_win = True
@@ -86,17 +87,42 @@ def cursor_pos_callback(window, xpos, ypos):
     g_camera.process_mouse(xpos, ypos)
 
 
+up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
+default_forward = glm.vec3(0.7071, 0, 0.7071)
+#default_forward = glm.vec3(0.0, 0, 1)
+
+
 def load_camera_positions(camera_pose):
+    global new_camera_pos, up_vector, default_forward
+
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
     x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
 
-    position = glm.vec3(x, y, z)
-    front_vector = -glm.normalize(position)  # Normalize and invert to face origin
-    up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
+    rot = glm.quat(qw, qx, qy, qz)
+    rotMat = glm.mat3_cast(rot)
+
+    position = glm.vec3(x, y, z) * g_camera.zoomVal
+
+    if new_camera_pos:
+        # Take input in the format "x, y, z"
+        user_input = input("Enter new default_forward as x, y, z: ")
+
+        # Parse the input into three floats
+        try:
+            x, y, z = map(float, user_input.split(','))
+            default_forward = glm.vec3(x, y, z)
+            new_camera_pos = False  # Reset the flag
+        except ValueError:
+            print("Invalid input. Please enter the vector as 'x, y, z'.")
+
+    # Use a default forward vector, assuming the camera looks towards the negative Z-axis in its local spac
+
+    # Apply the rotation to the default forward vector to get the world-space front vector
+    front_vector = glm.normalize(rotMat * default_forward)
 
     # Right vector:
     right = glm.normalize(glm.cross(front_vector, up_vector))
-    baseline = 0.193001
+    baseline = 0.193001 * 5
 
     right_pos = position + (right * baseline)
     res = glm.distance(position, right_pos)
@@ -181,7 +207,7 @@ def wheel_callback(window, dx, dy):
 
 
 def key_callback(window, key, scancode, action, mods):
-    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius, animate, record
+    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius, animate, record, new_camera_pos
     speed = 5
     if action == glfw.REPEAT or action == glfw.PRESS:
         if key == glfw.KEY_Q:
@@ -190,6 +216,8 @@ def key_callback(window, key, scancode, action, mods):
             g_camera.process_roll_key(-1)
         elif key == glfw.KEY_N:
             pose_index += 1
+        elif key == glfw.KEY_M:
+            pose_index -= 1
         elif key == glfw.KEY_I:
             switch_lr_pose = not switch_lr_pose
         elif key == glfw.KEY_X:
@@ -218,7 +246,7 @@ def key_callback(window, key, scancode, action, mods):
             animate = not animate
             g_camera.camera_position -= glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
         elif key == glfw.KEY_4:
-            record = not record
+            new_camera_pos = not new_camera_pos
             g_camera.camera_position += glm.normalize(glm.cross(g_camera.camera_front, g_camera.camera_up))
     print(f"theta: {theta}, phi: {phi}, radius: {radius}")
 
@@ -327,10 +355,47 @@ def update_sphere_positions(radius, theta, phi):
     return radius, theta, phi
 
 
-def main():
+def main(trained_model = None, colmap_poses = None):
     global g_camera, g_renderer, g_renderer_list, g_renderer_idx, g_scale_modifier, g_auto_sort, \
         g_show_control_win, g_show_help_win, g_show_camera_win, \
-        g_render_mode, g_render_mode_tables, pose_index, manual_save, switch_lr_pose, theta, phi, radius
+        g_render_mode, g_render_mode_tables, pose_index, manual_save, switch_lr_pose, theta, phi, radius, use_file
+
+    width = 1920
+    height = 1280
+    # settings
+    camera_poses = []
+    if colmap_poses is not None:
+        use_file = True
+        imagesFilePath = os.path.join(colmap_poses, "images.txt")
+        file = open(imagesFilePath, "r")
+        line_no = 0
+        for line in file.readlines():
+            if line.startswith("#"):
+                continue
+            if line_no % 2 == 1:
+                line_no += 1
+                continue
+
+            elements = line.split()
+            # Extract the needed information
+            # Assuming the first 8 values are IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ
+            image_id, qw, qx, qy, qz, x, y, z, camera_id, fileName = elements
+            camera_poses.append(elements)
+
+            line_no += 1
+        print(f"Found correct number of camera_poses: {len(camera_poses) == 100}")
+        camerasFilePath = os.path.join(colmap_poses, "cameras.txt")
+        cameraFile = open(camerasFilePath, "r")
+        for line in cameraFile.readlines():
+            if line.startswith("#"):
+                continue
+            elements = line.split()
+            id = int(elements[0])
+            width = int(elements[2])
+            height = int(elements[3])
+            fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
+
+    g_camera = util.Camera(height, width)
 
     imgui.create_context()
     if args.hidpi:
@@ -356,9 +421,7 @@ def main():
     g_renderer_idx = BACKEND_OGL
     g_renderer = g_renderer_list[g_renderer_idx]
 
-    # gaussian data
-    gaussians = util_gau.naive_gaussian()
-    update_activated_renderer_state(gaussians)
+
     width, height = glfw.get_framebuffer_size(window)
 
     # Step 1: Create an FBO and a texture attachment
@@ -387,53 +450,60 @@ def main():
         print("Error: Framebuffer is not complete.")
     gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
 
-    # Example usage
-    csv_file_path = 'camera_data.csv'  # Specify the path to your CSV file
+    scene_folder = "."
+    if trained_model is not None:
+        scene_folder = os.path.split(trained_model)[-1]
 
-    if not os.path.exists(csv_file_path):
-        with open(csv_file_path, "w") as file:
-            file.close()
-    camera_poses = read_camera_poses_from_csv(csv_file_path)
-    radius = 5
+        if not os.path.exists("out"):
+            os.mkdir("out")
+        if not os.path.exists(f"out/{scene_folder}"):
+            os.mkdir(f"out/{scene_folder}")
+        if not os.path.exists(f"out/{scene_folder}/right"):
+            os.mkdir(f"out/{scene_folder}/right")
+        if not os.path.exists(f"out/{scene_folder}/depth"):
+            os.mkdir(f"out/{scene_folder}/depth")
+        if not os.path.exists(f"out/{scene_folder}/left"):
+            os.mkdir(f"out/{scene_folder}/left")
 
-    if not os.path.exists("out"):
-        os.mkdir("out")
-    if not os.path.exists("out/right"):
-        os.mkdir("out/right")
-    if not os.path.exists("out/depth"):
-        os.mkdir("out/depth")
-    if not os.path.exists("out/left"):
-        os.mkdir("out/left")
-    # settings
 
-    filePath = "C:\\Users\\mgjer\\PycharmProjects\\gaussian-splatting\\data\\nerf_supervised\\poses\\colmap_text\\images.txt"
-    file = open(filePath, "r")
-    camera_poses = []
-    line_no = 0
-    for line in file.readlines():
-        if line.startswith("#"):
-            continue
-        if line_no % 2 == 1:
-            line_no += 1
-            continue
+    saved_image = [False for x in camera_poses]
 
-        elements = line.split()
-        # Extract the needed information
-        # Assuming the first 8 values are IMAGE_ID, QW, QX, QY, QZ, TX, TY, TZ
-        image_id, qw, qx, qy, qz, x, y, z, camera_id, fileName = elements
-        camera_poses.append(elements)
+    skip_frame = True
+    if len(camera_poses)> 0:
+        pose, poseRight = load_camera_positions(camera_poses[pose_index])
+    else:
+        pose, poseRight = generate_sphere_positions(radius, theta, phi)
+    # gaussian data
+    #
+    if trained_model is not None:
+        gaussians_path = os.path.join(trained_model, "point_cloud/iteration_7000/point_cloud.ply")
+        gaussians = util_gau.load_ply(gaussians_path)
+    else:
+        gaussians = util_gau.naive_gaussian()
+    g_renderer.update_gaussian_data(gaussians)
+    g_renderer.sort_and_update(g_camera, use_file, pose)
+    update_activated_renderer_state(gaussians)
+    frame_counter = 0  # Initialize frame counter
 
-        line_no += 1
-    print(f"Found correct number of camera_poses: {len(camera_poses) == 100}")
-    pose_id = 0
     while not glfw.window_should_close(window):
-
+        frame_counter += 1
         # if animate:
         #    radius, theta, phi = update_sphere_positions(radius, theta, phi)
         #
 
+        # Check if 30 frames have passed
+        if frame_counter == 30:
+            pose_index += 1  # Move to the next camera pose
+            frame_counter = 0  # Reset the frame counter
+
+            # Ensure pose_index doesn't exceed your camera_poses list length
+            if 0 < len(camera_poses) <= pose_index:
+                glfw.set_window_should_close(window, True)
+                continue
+
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
-        pose, poseRight = load_camera_positions(camera_poses[pose_id])
+        if len(camera_poses) > 0:
+            pose, poseRight = load_camera_positions(camera_poses[pose_index])
 
         glfw.poll_events()
         impl.process_inputs()
@@ -451,7 +521,7 @@ def main():
 
         g_renderer.draw()
 
-        if manual_save:
+        if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frame:
             ######### LEFT FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -466,7 +536,7 @@ def main():
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the image vertically.
             image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/left/{pose_index}.png")
+            image.save(f"out/{scene_folder}/left/{pose_index}.png")
             ###### RIGHT FBO
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_right)
@@ -483,7 +553,7 @@ def main():
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the image vertically.
             image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/right/{pose_index}.png")
+            image.save(f"out/{scene_folder}/right/{pose_index}.png")
 
             ####### DEPTH FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure default framebuffer is active for ImGui
@@ -503,13 +573,16 @@ def main():
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the image vertically.
             image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/depth/{pose_index}.png")
+            image.save(f"out/{scene_folder}/depth/{pose_index}.png")
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
-            # saved[pose_index] = True
+            saved_image[pose_index] = True
             manual_save = False
+            skip_frame = True
+            print(f"Generated {pose_index} images of scene: {os.path.split(trained_model)[-1]}")
 
+        skip_frame = False
         # imgui ui
         if imgui.begin_main_menu_bar():
             if imgui.begin_menu("Window", True):
@@ -667,6 +740,12 @@ if __name__ == "__main__":
     global args
     parser = argparse.ArgumentParser(description="NeUVF editor with optional HiDPI support.")
     parser.add_argument("--hidpi", action="store_true", help="Enable HiDPI scaling for the interface.")
-    args = parser.parse_args()
+    parser.add_argument('--gs_model', type=str)
+    parser.add_argument('--colmap_poses', type=str)
 
-    main()
+    args = parser.parse_args()
+    try:
+        main(args.gs_model, args.colmap_poses)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        main()
