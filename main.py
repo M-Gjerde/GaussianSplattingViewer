@@ -35,8 +35,8 @@ switch_lr_pose = False
 theta = 0
 phi = 0
 radius = 3
-animate = False
-record = False
+animate = True
+debug_vector = False
 new_camera_pos = False
 
 BACKEND_OGL = 0
@@ -87,21 +87,82 @@ def cursor_pos_callback(window, xpos, ypos):
     g_camera.process_mouse(xpos, ypos)
 
 
-up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
-default_forward = glm.vec3(0.7071, 0, 0.7071)
+up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the -y direction
+front_vector = glm.vec3(0, 0, 1)
 #default_forward = glm.vec3(0.0, 0, 1)
 
 
-def load_camera_positions(camera_pose):
-    global new_camera_pos, up_vector, default_forward
-
+def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0)):
+    global new_camera_pos, up_vector, front_vector, debug_vector
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
     x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
+    position = glm.vec3(x, y, z)
+    baseline = -0.193001 * 5
 
+
+    """# Assuming camera_pose is already defined
+
+
+    # Convert quaternion to rotation matrix
     rot = glm.quat(qw, qx, qy, qz)
-    rotMat = glm.mat3_cast(rot)
+    rotMat = glm.mat4_cast(rot)
 
-    position = glm.vec3(x, y, z) * g_camera.zoomVal
+    # Apply translation
+    transMat = glm.translate(glm.mat4(1.0), position)
+
+    # Combine rotation and translation
+    modelMat = transMat * rotMat
+
+    # Adjust for OpenGL's coordinate system (optional step, only if necessary)
+    # This step is more straightforward and intuitive than manually inverting matrix rows
+    #modelMat = glm.rotate(modelMat, glm.radians(180.0), glm.vec3(1.0, 0.0, 0.0))
+
+    # Invert the 2nd row (Y-axis components in column-major order)
+    modelMat[0][1] = -modelMat[0][1]
+    modelMat[1][1] = -modelMat[1][1]
+    modelMat[2][1] = -modelMat[2][1]
+    modelMat[3][1] = -modelMat[3][1]
+
+    # Invert the 3rd row (Z-axis components in column-major order)
+    modelMat[0][2] = -modelMat[0][2]
+    modelMat[1][2] = -modelMat[1][2]
+    modelMat[2][2] = -modelMat[2][2]
+    modelMat[3][2] = -modelMat[3][2]
+
+    # Compute the view matrix
+    viewMat = glm.inverse(modelMat)
+
+    # Compute the right view matrix by shifting along the X-axis
+    baseline = -0.193001 * 5
+    transRightMat = glm.translate(glm.mat4(1.0), glm.vec3(baseline, 0.0, 0.0))
+    rightViewMat = transRightMat * viewMat
+"""
+    if bounding_box is not None:
+        # Convert bounding box to glm.vec3 for easier comparison
+        min_bound = glm.vec3(*bounding_box[0])
+        max_bound = glm.vec3(*bounding_box[1])
+
+        # Check if the position is inside the bounding box
+        is_inside = all([
+            min_bound.x <= position.x <= max_bound.x,
+            min_bound.y <= position.y <= max_bound.y,
+            min_bound.z <= position.z <= max_bound.z,
+        ])
+
+        # If inside or too close, adjust or discard
+        if is_inside:
+            # This is a simple strategy: move the position further away along the vector from center to position
+            # You might want to customize this logic based on your specific needs
+            direction = glm.normalize(position - center)  # Direction from center to position
+            adjustment_distance = 5.0  # This is an arbitrary distance; adjust as needed
+            new_position = position + direction * adjustment_distance
+            print(f"Adjusting position from {position} to {new_position}")
+            position = new_position
+        else:
+            print("Position is outside the bounding box, no adjustment needed.")
+
+
+    viewMat = glm.lookAt(position, center, up_vector)
 
     if new_camera_pos:
         # Take input in the format "x, y, z"
@@ -117,12 +178,15 @@ def load_camera_positions(camera_pose):
 
     # Use a default forward vector, assuming the camera looks towards the negative Z-axis in its local spac
 
-    # Apply the rotation to the default forward vector to get the world-space front vector
-    front_vector = glm.normalize(rotMat * default_forward)
+
+    if debug_vector:
+        print("Front vector: ", front_vector)
+        print("Position: ", position)
+        print("up vector: ", up_vector)
+        debug_vector = False
 
     # Right vector:
     right = glm.normalize(glm.cross(front_vector, up_vector))
-    baseline = 0.193001 * 5
 
     right_pos = position + (right * baseline)
     res = glm.distance(position, right_pos)
@@ -130,13 +194,15 @@ def load_camera_positions(camera_pose):
     pose_left = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": position
+        "camera_position": position,
+        "camera_view": viewMat
     }
 
     pose_right = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": right_pos
+        "camera_position": right_pos,
+        "camera_view": viewMat
     }
     return pose_left, pose_right
 
@@ -163,13 +229,15 @@ def generate_sphere_positions(radius_l, theta_l, phi_l):
     pose = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": position
+        "camera_position": position,
+        "camera_view": glm.mat4(1.0),
     }
 
     poseRight = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": right_pos
+        "camera_position": right_pos,
+        "camera_view": glm.mat4(1.0),
     }
 
     return pose, poseRight
@@ -207,7 +275,7 @@ def wheel_callback(window, dx, dy):
 
 
 def key_callback(window, key, scancode, action, mods):
-    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius, animate, record, new_camera_pos
+    global pose_index, use_file, manual_save, switch_lr_pose, theta, phi, radius, animate, debug_vector, new_camera_pos
     speed = 5
     if action == glfw.REPEAT or action == glfw.PRESS:
         if key == glfw.KEY_Q:
@@ -224,6 +292,8 @@ def key_callback(window, key, scancode, action, mods):
             manual_save = True
         elif key == glfw.KEY_P:
             use_file = not use_file
+        elif key == glfw.KEY_B:
+            debug_vector = not debug_vector
         elif key == glfw.KEY_UP or key == glfw.KEY_W:
             g_camera.camera_position += g_camera.camera_front
             theta -= 1.0 * speed
@@ -273,7 +343,8 @@ def update_activated_renderer_state(gaus: util_gau.GaussianData):
     pose = {
         "camera_front": camera_front,
         "camera_up": camera_up,
-        "camera_position": camera_position
+        "camera_position": camera_position,
+        "camera_view": glm.mat4(1.0),
     }
 
     g_renderer.update_gaussian_data(gaus)
@@ -395,6 +466,8 @@ def main(trained_model = None, colmap_poses = None):
             height = int(elements[3])
             fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
 
+    height = 720
+    width = int(height*2.2222)
     g_camera = util.Camera(height, width)
 
     imgui.create_context()
@@ -469,45 +542,49 @@ def main(trained_model = None, colmap_poses = None):
     saved_image = [False for x in camera_poses]
 
     skip_frame = True
-    if len(camera_poses)> 0:
+    if len(camera_poses) > 0:
         pose, poseRight = load_camera_positions(camera_poses[pose_index])
     else:
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
+
     # gaussian data
     #
     if trained_model is not None:
         gaussians_path = os.path.join(trained_model, "point_cloud/iteration_7000/point_cloud.ply")
-        gaussians = util_gau.load_ply(gaussians_path)
+        gaussians, bounding_box, center = util_gau.load_ply(gaussians_path)
     else:
-        gaussians = util_gau.naive_gaussian()
+        gaussians, bounding_box, center = util_gau.naive_gaussian()
+
     g_renderer.update_gaussian_data(gaussians)
     g_renderer.sort_and_update(g_camera, use_file, pose)
     update_activated_renderer_state(gaussians)
     frame_counter = 0  # Initialize frame counter
 
     while not glfw.window_should_close(window):
+
+        glfw.poll_events()
+        impl.process_inputs()
+        imgui.new_frame()
+
         frame_counter += 1
         # if animate:
         #    radius, theta, phi = update_sphere_positions(radius, theta, phi)
         #
 
         # Check if 30 frames have passed
-        if frame_counter == 30:
-            pose_index += 1  # Move to the next camera pose
+        if frame_counter == 30 and animate:
+            pose_index += 5  # Move to the next camera pose
             frame_counter = 0  # Reset the frame counter
 
-            # Ensure pose_index doesn't exceed your camera_poses list length
-            if 0 < len(camera_poses) <= pose_index:
-                glfw.set_window_should_close(window, True)
-                continue
+        # Ensure pose_index doesn't exceed your camera_poses list length
+        if 0 < len(camera_poses) <= pose_index:
+            glfw.set_window_should_close(window, True)
+            continue
 
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
         if len(camera_poses) > 0:
-            pose, poseRight = load_camera_positions(camera_poses[pose_index])
+            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center)
 
-        glfw.poll_events()
-        impl.process_inputs()
-        imgui.new_frame()
 
         gl.glClearColor(0, 0, 0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -522,6 +599,7 @@ def main(trained_model = None, colmap_poses = None):
         g_renderer.draw()
 
         if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frame:
+            print(f"Saving from Image ID: {camera_poses[pose_index][0]}")
             ######### LEFT FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -615,7 +693,7 @@ def main(trained_model = None, colmap_poses = None):
                                                            )
                     if file_path:
                         try:
-                            gaussians = util_gau.load_ply(file_path)
+                            gaussians, bounding_box, center = util_gau.load_ply(file_path)
                             g_renderer.update_gaussian_data(gaussians)
                             g_renderer.sort_and_update(g_camera, use_file, pose)
                         except RuntimeError as e:

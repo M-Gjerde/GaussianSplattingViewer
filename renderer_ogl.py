@@ -138,7 +138,7 @@ class OpenGLRenderer(GaussianRenderBase):
 
     def sort_and_update(self, camera: util.Camera, use_file, pose):
         if use_file:
-            index =_sort_gaussian(self.gaussians, camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"]))
+            index =_sort_gaussian(self.gaussians, camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"], pose["camera_view"]))
         else:
             index = _sort_gaussian(self.gaussians, camera.get_view_matrix(True))
 
@@ -156,11 +156,11 @@ class OpenGLRenderer(GaussianRenderBase):
 
     def update_camera_pose(self, camera: util.Camera, use_file, pose):
         if use_file:
-            view_mat = camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"])
+            view_mat = camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"], pose["camera_view"])
         else:
             view_mat = camera.get_view_matrix(True)
 
-        util.set_uniform_mat4(self.program, view_mat, "view_matrix")
+        util.set_uniform_mat4(self.program, view_mat.astype(np.float32), "view_matrix")
         util.set_uniform_v3(self.program, camera.position, "cam_pos")
 
     def update_camera_intrin(self, camera: util.Camera):

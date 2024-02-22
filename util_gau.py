@@ -56,7 +56,7 @@ def naive_gaussian():
         gau_s,
         gau_a,
         gau_c
-    )
+    ), 0, 0
 
 
 def load_ply(path):
@@ -66,6 +66,14 @@ def load_ply(path):
                     np.asarray(plydata.elements[0]["y"]),
                     np.asarray(plydata.elements[0]["z"])),  axis=1)
     opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+    # Calculate bounding box
+    min_bound = xyz.min(axis=0)
+    max_bound = xyz.max(axis=0)
+    bounding_box = np.array([min_bound, max_bound])
+
+    # Calculating average of all coordinates (center)
+    center = xyz.mean(axis=0)
 
     features_dc = np.zeros((xyz.shape[0], 3, 1))
     features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
@@ -105,9 +113,9 @@ def load_ply(path):
     shs = np.concatenate([features_dc.reshape(-1, 3), 
                         features_extra.reshape(len(features_dc), -1)], axis=-1).astype(np.float32)
     shs = shs.astype(np.float32)
-    return GaussianData(xyz, rots, scales, opacities, shs)
+    return GaussianData(xyz, rots, scales, opacities, shs), bounding_box, center
 
 if __name__ == "__main__":
-    gs = load_ply("C:\\Users\\MSI_NB\\Downloads\\viewers\\models\\train\\point_cloud\\iteration_7000\\point_cloud.ply")
+    gs, bounding_box, center = load_ply("C:\\Users\\MSI_NB\\Downloads\\viewers\\models\\train\\point_cloud\\iteration_7000\\point_cloud.ply")
     a = gs.flat()
     print(a.shape)

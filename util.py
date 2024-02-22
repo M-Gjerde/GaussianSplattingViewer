@@ -15,7 +15,7 @@ class Camera:
         self.zfar = 100
         self.h = h
         self.w = w
-        self.fovy = np.pi / 3
+        self.fovy = 0.7
         self.position = np.array([0.0, 0.0, 3.0]).astype(np.float32)
         self.zoomVal = 1.0
         self.target = np.array([0.0, 0.0, 0.0]).astype(np.float32)
@@ -53,10 +53,12 @@ class Camera:
         x = np.cross(self.up, z)
         return np.stack([x, self.up, z], axis=-1)
 
-    def get_view_matrix(self, arcball=True, front=None, pos=None, up=None, arcball_translate=None):
+    def get_view_matrix(self, arcball=True, front=None, pos=None, up=None, view=None):
         if arcball:
             if front is not None:
                 target = pos + front
+                if view is not None:
+                    return np.array(view)
                 return np.array(glm.lookAt(pos, target, up))
             else:
                 target = self.camera_position + self.camera_front

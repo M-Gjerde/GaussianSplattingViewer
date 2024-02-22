@@ -90,12 +90,12 @@ def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
     o3d.visualization.draw_geometries([point_cloud])
 
 if __name__ == "__main__":
-    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0\\depth\\5.png"
-    color_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0\\right\\5.png"
+    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\depth\\2.png"
+    color_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\right\\2.png"
     focal_length = 3437.474032508210  # Example focal length in pixels
     baseline =  0.193001 * 5  # Example baseline in meters
-    intrinsic_matrix = np.array([[3437.474032508210, 0, 2324.575981449758],  # fx, 0, cx
-                                 [0, 3443.9159462085058, 1048.3552323],  # 0, fy, cy
+    intrinsic_matrix = np.array([[3437.474032508210 / 3, 0, 4484 / 2],  # fx, 0, cx
+                                 [0, 3443.9159462085058 / 3, 1415 / 2],  # 0, fy, cy
                                  [0, 0, 1]])  # Intrinsic matrix of the camera
 
     disparity_image = load_image(disparity_file_path)
