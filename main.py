@@ -715,11 +715,9 @@ def main(trained_model = None, colmap_poses = None):
 
             imageLeft_np = np.array(imageLeft)
             imageLeft_gray = cv2.cvtColor(imageLeft_np, cv2.COLOR_BGR2GRAY)
-            blur_ref_small = skimage.measure.blur_effect(imageLeft_gray, h_size=23)
-            blur_ref = skimage.measure.blur_effect(imageLeft_gray, h_size=37)
-            blur_ref_big = skimage.measure.blur_effect(imageLeft_gray, h_size=51)
-            print(f"Rendered blur score: {blur_ref_small}, {blur_ref}, {blur_ref_big}")
-            writer.writerow([str(pose_index), blur_ref_small, blur_ref, blur_ref_big])
+            blur_ref = skimage.measure.blur_effect(imageLeft_gray, h_size=23)
+            print(f"Rendered blur score: {blur_ref}")
+            writer.writerow([str(pose_index), blur_ref])
 
             imageDepth = imageDepth.transpose(Image.FLIP_TOP_BOTTOM)
             imageLeft = imageLeft.transpose(Image.FLIP_TOP_BOTTOM)
