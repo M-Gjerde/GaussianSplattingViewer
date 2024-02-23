@@ -6,10 +6,10 @@ gs_model_base_path = r"C:\Users\mgjer\PycharmProjects\gaussian-splatting\output\
 raw_data_base_path = r"C:\Users\mgjer\Downloads"
 
 # Total number of scenes to process
-total_scenes = 90
+total_scenes = 110
 
 # Iterate through all scene directories
-for i in range(21, total_scenes):
+for i in range(20, total_scenes):
     # Determine the part number (increment every 20 scenes)
     part_number = i // 20 + 1  # Integer division, starts with part 1 for scenes 0-19
 

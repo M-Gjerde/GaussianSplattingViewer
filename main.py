@@ -1,9 +1,12 @@
 import math
+import random
 import time
 
+import cv2
 import glfw
 import OpenGL.GL as gl
 import glm
+import skimage
 from PIL import Image
 from imgui.integrations.glfw import GlfwRenderer
 import imgui
@@ -18,6 +21,30 @@ import sys
 import argparse
 from renderer_ogl import OpenGLRenderer, GaussianRenderBase
 import csv
+from skimage.metrics import structural_similarity as ssim
+from pathlib import Path
+import torch
+_ = torch.manual_seed(123)
+from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg')
+
+
+def preprocess_image(img_np):
+    # Convert to tensor
+    img_tensor = torch.from_numpy(img_np).float()
+
+    # Add batch dimension if not present
+    if len(img_tensor.shape) == 3:
+        img_tensor = img_tensor.unsqueeze(0)
+
+    # Normalize to [-1, 1]
+    img_tensor = (img_tensor / 255.0) * 2 - 1
+
+    # Permute dimensions if required
+    if img_tensor.shape[1] > 3:  # assuming channel-last format for numpy array
+        img_tensor = img_tensor.permute(0, 3, 1, 2)
+
+    return img_tensor
 
 # Add the directory containing main.py to the Python path
 dir_path = os.path.dirname(os.path.realpath(__file__))
@@ -466,8 +493,8 @@ def main(trained_model = None, colmap_poses = None):
             height = int(elements[3])
             fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
 
-    height = 720
-    width = int(height*2.2222)
+    #height = 720
+    #width = int(height*2.2222)
     g_camera = util.Camera(height, width)
 
     imgui.create_context()
@@ -495,7 +522,7 @@ def main(trained_model = None, colmap_poses = None):
     g_renderer = g_renderer_list[g_renderer_idx]
 
 
-    width, height = glfw.get_framebuffer_size(window)
+    #width, height = glfw.get_framebuffer_size(window)
 
     # Step 1: Create an FBO and a texture attachment
     fbo_left = gl.glGenFramebuffers(1)
@@ -559,9 +586,43 @@ def main(trained_model = None, colmap_poses = None):
     g_renderer.sort_and_update(g_camera, use_file, pose)
     update_activated_renderer_state(gaussians)
     frame_counter = 0  # Initialize frame counter
+    csv_file_path = f"out/{scene_folder}/ssim_results.csv"
+    file = open(csv_file_path, 'a', newline='')
+    writer = csv.writer(file)
+    # Optional: Write headers to the CSV file
+    writer.writerow(['Rendered ID', 'Blur score 0 - Low and 1- High'])
+
+    # Check SSIM with training images
+    num_blur_checks = 5
+    path = Path(colmap_poses)
+    images_path = path.parents[1] / "images"
+    # List all image files (assuming .jpg and .png files for this example)
+    image_files = list(images_path.glob('*.jpg')) + list(images_path.glob('*.png'))
+    random.shuffle(image_files)
+    # Open the CSV file in write mode ('w') or append mode ('a') as needed
+    # CSV file to store the results
+    values = []
+    for x in range(num_blur_checks):
+        # Select an image file sequentially from the shuffled list
+        if len(image_files) > 0:  # Check if there are still images left to select
+            selected_image = image_files.pop(0)  # Remove the first image from the list to avoid repetition
+            refImage = cv2.imread(str(selected_image))  # Ensure to convert Path object to string
+            refImage_gray = cv2.cvtColor(refImage, cv2.COLOR_BGR2GRAY)
+            blur_ref = skimage.measure.blur_effect(refImage_gray, h_size=11)
+            values.append(blur_ref)
+            print("Reference blur score: ", blur_ref)
+        else:
+            print("No more unique images available.")
+            break  # or handle according to your needs
+    print("Average blur score: ", sum(values) / len(values))
+    writer.writerow(["Reference:", str(sum(values) / len(values))])
+    file.close()
 
     while not glfw.window_should_close(window):
+        file = open(csv_file_path, 'a', newline='')
+        writer = csv.writer(file)
 
+        skip_frames = True
         glfw.poll_events()
         impl.process_inputs()
         imgui.new_frame()
@@ -591,6 +652,9 @@ def main(trained_model = None, colmap_poses = None):
 
         update_camera_intrin_lazy()
 
+        if frame_counter == 29:
+            skip_frames = False
+
         if switch_lr_pose:
             g_renderer.update_camera_pose(g_camera, use_file, poseRight)
         else:
@@ -598,8 +662,8 @@ def main(trained_model = None, colmap_poses = None):
 
         g_renderer.draw()
 
-        if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frame:
-            print(f"Saving from Image ID: {camera_poses[pose_index][0]}")
+        if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frames:
+            print(f"Saving from Image ID: {camera_poses[pose_index][0]}. Rendered image name: {pose_index}.png")
             ######### LEFT FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -610,11 +674,11 @@ def main(trained_model = None, colmap_poses = None):
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
 
             # Convert pixels to a numpy array and then to an image
-            image = Image.frombytes("RGB", (width, height), pixels)
+            imageLeft = Image.frombytes("RGB", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
-            # We need to flip the image vertically.
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/{scene_folder}/left/{pose_index}.png")
+            # We need to flip the imageLeft vertically.
+
+
             ###### RIGHT FBO
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_right)
@@ -627,11 +691,9 @@ def main(trained_model = None, colmap_poses = None):
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
 
             # Convert pixels to a numpy array and then to an image
-            image = Image.frombytes("RGB", (width, height), pixels)
+            imageRight = Image.frombytes("RGB", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
-            # We need to flip the image vertically.
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/{scene_folder}/right/{pose_index}.png")
+            # We need to flip the imageRight vertically.
 
             ####### DEPTH FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure default framebuffer is active for ImGui
@@ -647,11 +709,25 @@ def main(trained_model = None, colmap_poses = None):
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_UNSIGNED_SHORT)
 
             # Convert pixels to a numpy array and then to an image
-            image = Image.frombytes("I;16", (width, height), pixels)
+            imageDepth = Image.frombytes("I;16", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
-            # We need to flip the image vertically.
-            image = image.transpose(Image.FLIP_TOP_BOTTOM)
-            image.save(f"out/{scene_folder}/depth/{pose_index}.png")
+            # We need to flip the imageDepth vertically.
+
+            imageLeft_np = np.array(imageLeft)
+            imageLeft_gray = cv2.cvtColor(imageLeft_np, cv2.COLOR_BGR2GRAY)
+            blur_ref_small = skimage.measure.blur_effect(imageLeft_gray, h_size=23)
+            blur_ref = skimage.measure.blur_effect(imageLeft_gray, h_size=37)
+            blur_ref_big = skimage.measure.blur_effect(imageLeft_gray, h_size=51)
+            print(f"Rendered blur score: {blur_ref_small}, {blur_ref}, {blur_ref_big}")
+            writer.writerow([str(pose_index), blur_ref_small, blur_ref, blur_ref_big])
+
+            imageDepth = imageDepth.transpose(Image.FLIP_TOP_BOTTOM)
+            imageLeft = imageLeft.transpose(Image.FLIP_TOP_BOTTOM)
+            imageRight = imageRight.transpose(Image.FLIP_TOP_BOTTOM)
+
+            imageDepth.save(f"out/{scene_folder}/depth/{pose_index}.png")
+            imageRight.save(f"out/{scene_folder}/right/{pose_index}.png")
+            imageLeft.save(f"out/{scene_folder}/left/{pose_index}.png")
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
@@ -809,7 +885,9 @@ def main(trained_model = None, colmap_poses = None):
         imgui.render()
         impl.render(imgui.get_draw_data())
         glfw.swap_buffers(window)
+        file.close() # for incremental updates
 
+    file.close()
     impl.shutdown()
     glfw.terminate()
 
