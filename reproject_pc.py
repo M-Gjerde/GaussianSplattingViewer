@@ -1,7 +1,7 @@
 import numpy as np
 import open3d as o3d
 import cv2  # For image operations
-from tqdm import tqdm
+#from tqdm import tqdm
 
 
 def median_filter_float32(image, kernel_size):
