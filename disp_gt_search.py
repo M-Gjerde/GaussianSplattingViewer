@@ -35,6 +35,7 @@ def calculate_scale(scene_folder, images_numbers = (0, 5), save_to_file=False, d
     scenes = os.listdir(scene_folder)
     for scene in scenes:
         print(f"Scene: {scene}")
+        median_scales = []
         for image_name in images_numbers:
             img1 = cv.imread(f'{scene_folder}/{scene}/left/{image_name}.png', cv.IMREAD_GRAYSCALE)  # queryImage
             img2 = cv.imread(f'{scene_folder}/{scene}/right/{image_name}.png', cv.IMREAD_GRAYSCALE)  # trainImage
@@ -105,10 +106,6 @@ def calculate_scale(scene_folder, images_numbers = (0, 5), save_to_file=False, d
             depth_gt /= median_scale
             depth_gt = depth_gt.astype(np.uint16)
 
-            if save_to_file:
-                if not os.path.exists(f"{scene_folder}/{scene}/depth_gt"):
-                    os.mkdir(f"{scene_folder}/{scene}/depth_gt")
-                cv.imwrite(f"{scene_folder}/{scene}/depth_gt/{image_name}.png", depth_gt)
 
             if debug_plot:
                 draw_params = dict(matchColor=(0, 255, 0),
@@ -120,8 +117,24 @@ def calculate_scale(scene_folder, images_numbers = (0, 5), save_to_file=False, d
                 plt.imshow(img3, ), plt.show()
 
             # print(f"Mean (Average) Scale: {average_scale}")
-            print(f"Median Scale: {median_scale}")
+            median_scales.append(median_scale)
             # print(f"Standard Deviation of Scale: {std_dev_scale}")
+
+        median_scale = np.median(median_scales)
+        print(f"Median Scale: {median_scale}")
+        print(f"Mean Scale: {np.average(median_scales)}")
+        for image_name in images_numbers:
+            if save_to_file:
+
+                depth = cv.imread(f'{scene_folder}/{scene}/depth/{image_name}.png', cv.IMREAD_UNCHANGED)  # trainImage
+                depth_gt = depth.copy().astype(np.float64)
+
+                depth_gt /= median_scale
+                depth_gt = (depth_gt * 64).astype(np.uint16)
+
+                if not os.path.exists(f"{scene_folder}/{scene}/depth_gt"):
+                    os.mkdir(f"{scene_folder}/{scene}/depth_gt")
+                cv.imwrite(f"{scene_folder}/{scene}/depth_gt/{image_name}.png", depth_gt)
 
 
 if __name__ == "__main__":
