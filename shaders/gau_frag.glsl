@@ -6,6 +6,7 @@ in vec3 conic;
 in vec2 coordxy;  // local coordinate in quad, unit in pixel
 
 uniform int render_mod;  // > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball, -4 gaussian ball
+uniform int is_depth_image;  // > 0 render 0-ith SH dim, -1 depth, -2 bill board, -3 flat ball, -4 gaussian ball
 
 out vec4 FragColor;
 
@@ -24,6 +25,8 @@ void main()
     if (opacity < 1.f / 255.f)
         discard;
     FragColor = vec4(color, opacity);
+    if (is_depth_image == 1)
+        FragColor.a = FragColor.a > 0.22 ? 1 : 0;
 
     // handling special shading effect
     if (render_mod == -3)

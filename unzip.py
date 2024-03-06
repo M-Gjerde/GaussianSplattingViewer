@@ -7,7 +7,7 @@ root_dir = "C:\\Users\\mgjer\\Downloads\\"
 zip_file_pattern = "raw_data_v1_part"
 
 # Find all zip files matching the pattern and unzip them
-for part in range(8, 15):
+for part in range(14, 15):
     zip_file_name = f"{zip_file_pattern}{part}.zip"
     zip_file_path = os.path.join(root_dir, zip_file_name)
     if os.path.exists(zip_file_path):

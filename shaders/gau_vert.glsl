@@ -177,17 +177,10 @@ void main()
 	if (render_mod == -1)
 	{
 	    float baseline = 0.193001 * 5;
-	    float focal_length = 3437.4740325082107;
+	    float focal_length = 3437.4740325082107 * 0.25;
         float depth = (-g_pos_view.z) * 1000; // Convert from view space to a positive depth value
-        //float nearDepth = 0.0; // The depth value at which we want the maximum output value
-        //float farDepth = 8.0; // The depth value at which we want the output value to be 0
         float disparity = ((baseline * focal_length) / depth);
         color = vec3(disparity, disparity, disparity);
-        //// Use the mapping function to get the output value in 16-bit range
-        //float depth16bit = mapDepthTo16Bit(depth, nearDepth, farDepth);
-
-        // Normalize the 16-bit value to 0-1 range for color output
-
         return;
 	}
 

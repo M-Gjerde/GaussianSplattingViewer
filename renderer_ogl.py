@@ -151,6 +151,9 @@ class OpenGLRenderer(GaussianRenderBase):
     def set_render_mod(self, mod: int):
         util.set_uniform_1int(self.program, mod, "render_mod")
 
+    def set_is_depth_image(self, is_depth_image: int):
+        util.set_uniform_1int(self.program, is_depth_image, "is_depth_image")
+
     def set_render_reso(self, w, h):
         gl.glViewport(0, 0, w, h)
 

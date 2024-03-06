@@ -28,7 +28,18 @@ _ = torch.manual_seed(123)
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 lpips = LearnedPerceptualImagePatchSimilarity(net_type='vgg')
 
+def getWorld2View2(R, t, translate=np.array([.0, .0, .0]), scale=1.0):
+    Rt = np.zeros((4, 4))
+    Rt[:3, :3] = R.transpose()
+    Rt[:3, 3] = t
+    Rt[3, 3] = 1.0
 
+    C2W = np.linalg.inv(Rt)
+    cam_center = C2W[:3, 3]
+    cam_center = (cam_center + translate) * scale
+    C2W[:3, 3] = cam_center
+    Rt = np.linalg.inv(C2W)
+    return np.float32(Rt)
 def preprocess_image(img_np):
     # Convert to tensor
     img_tensor = torch.from_numpy(img_np).float()
@@ -82,6 +93,31 @@ g_render_mode_tables = ["Gaussian Ball", "Billboard", "Depth", "SH:0", "SH:0~1",
 g_render_mode = 6
 
 
+def qvec2rotmat(qvec):
+    return np.array([
+        [1 - 2 * qvec[2]**2 - 2 * qvec[3]**2,
+         2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
+         2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2]],
+        [2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
+         1 - 2 * qvec[1]**2 - 2 * qvec[3]**2,
+         2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1]],
+        [2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
+         2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
+         1 - 2 * qvec[1]**2 - 2 * qvec[2]**2]])
+
+def rotmat2qvec(R):
+    Rxx, Ryx, Rzx, Rxy, Ryy, Rzy, Rxz, Ryz, Rzz = R.flat
+    K = np.array([
+        [Rxx - Ryy - Rzz, 0, 0, 0],
+        [Ryx + Rxy, Ryy - Rxx - Rzz, 0, 0],
+        [Rzx + Rxz, Rzy + Ryz, Rzz - Rxx - Ryy, 0],
+        [Ryz - Rzy, Rzx - Rxz, Rxy - Ryx, Rxx + Ryy + Rzz]]) / 3.0
+    eigvals, eigvecs = np.linalg.eigh(K)
+    qvec = eigvecs[[3, 0, 1, 2], np.argmax(eigvals)]
+    if qvec[0] < 0:
+        qvec *= -1
+    return qvec
+
 def impl_glfw_init():
     window_name = "NeUVF editor"
 
@@ -118,92 +154,73 @@ up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the -y direction
 front_vector = glm.vec3(0, 0, 1)
 #default_forward = glm.vec3(0.0, 0, 1)
 
-
+last_image_id = 0
 def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0)):
-    global new_camera_pos, up_vector, front_vector, debug_vector
+    global new_camera_pos, up_vector, front_vector, debug_vector,last_image_id
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
     x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
     position = glm.vec3(x, y, z)
     baseline = -0.193001 * 5
-
-
-    """# Assuming camera_pose is already defined
-
-
-    # Convert quaternion to rotation matrix
-    rot = glm.quat(qw, qx, qy, qz)
-    rotMat = glm.mat4_cast(rot)
-
-    # Apply translation
-    transMat = glm.translate(glm.mat4(1.0), position)
-
-    # Combine rotation and translation
-    modelMat = transMat * rotMat
-
-    # Adjust for OpenGL's coordinate system (optional step, only if necessary)
-    # This step is more straightforward and intuitive than manually inverting matrix rows
-    #modelMat = glm.rotate(modelMat, glm.radians(180.0), glm.vec3(1.0, 0.0, 0.0))
-
-    # Invert the 2nd row (Y-axis components in column-major order)
-    modelMat[0][1] = -modelMat[0][1]
-    modelMat[1][1] = -modelMat[1][1]
-    modelMat[2][1] = -modelMat[2][1]
-    modelMat[3][1] = -modelMat[3][1]
-
-    # Invert the 3rd row (Z-axis components in column-major order)
-    modelMat[0][2] = -modelMat[0][2]
-    modelMat[1][2] = -modelMat[1][2]
-    modelMat[2][2] = -modelMat[2][2]
-    modelMat[3][2] = -modelMat[3][2]
-
-    # Compute the view matrix
-    viewMat = glm.inverse(modelMat)
-
-    # Compute the right view matrix by shifting along the X-axis
-    baseline = -0.193001 * 5
-    transRightMat = glm.translate(glm.mat4(1.0), glm.vec3(baseline, 0.0, 0.0))
-    rightViewMat = transRightMat * viewMat
-"""
-    if bounding_box is not None:
-        # Convert bounding box to glm.vec3 for easier comparison
-        min_bound = glm.vec3(*bounding_box[0])
-        max_bound = glm.vec3(*bounding_box[1])
-
-        # Check if the position is inside the bounding box
-        is_inside = all([
-            min_bound.x <= position.x <= max_bound.x,
-            min_bound.y <= position.y <= max_bound.y,
-            min_bound.z <= position.z <= max_bound.z,
-        ])
-
-        # If inside or too close, adjust or discard
-        if is_inside:
-            # This is a simple strategy: move the position further away along the vector from center to position
-            # You might want to customize this logic based on your specific needs
-            direction = glm.normalize(position - center)  # Direction from center to position
-            adjustment_distance = 5.0  # This is an arbitrary distance; adjust as needed
-            new_position = position + direction * adjustment_distance
-            print(f"Adjusting position from {position} to {new_position}")
-            position = new_position
-        else:
-            print("Position is outside the bounding box, no adjustment needed.")
-
-
-    viewMat = glm.lookAt(position, center, up_vector)
-
-    if new_camera_pos:
-        # Take input in the format "x, y, z"
-        user_input = input("Enter new default_forward as x, y, z: ")
-
-        # Parse the input into three floats
-        try:
-            x, y, z = map(float, user_input.split(','))
-            default_forward = glm.vec3(x, y, z)
-            new_camera_pos = False  # Reset the flag
-        except ValueError:
-            print("Invalid input. Please enter the vector as 'x, y, z'.")
+    id = int(camera_pose[0])
+    """
+        if bounding_box is not None:
+            # Convert bounding box to glm.vec3 for easier comparison
+            min_bound = glm.vec3(*bounding_box[0])
+            max_bound = glm.vec3(*bounding_box[1])
+    
+            # Check if the position is inside the bounding box
+            is_inside = all([
+                min_bound.x <= position.x <= max_bound.x,
+                min_bound.y <= position.y <= max_bound.y,
+                min_bound.z <= position.z <= max_bound.z,
+            ])
+    
+            # If inside or too close, adjust or discard
+            if is_inside:
+                # This is a simple strategy: move the position further away along the vector from center to position
+                # You might want to customize this logic based on your specific needs
+                direction = glm.normalize(position - center)  # Direction from center to position
+                adjustment_distance = 5.0  # This is an arbitrary distance; adjust as needed
+                new_position = position + direction * adjustment_distance
+                if id != last_image_id:
+                    print(f"Adjusting position from {position} to {new_position}")
+                position = new_position
+            else:
+                if id != last_image_id:
+                    print(f"Camera pose is outputside of the scene bounding box")
+    """
+    last_image_id = id
 
     # Use a default forward vector, assuming the camera looks towards the negative Z-axis in its local spac
+    rot = qvec2rotmat((qw, qx, qy, qz)).T
+    T = np.array([x, y, z])
+    world_view_trans = getWorld2View2(rot, T).transpose()
+
+    #f = glm.normalize(rotation * front_vector)
+    f_glm = glm.normalize(center - position)
+
+    position.y = -position.y
+    position.z = -position.z
+
+    f = glm.normalize(center - position)
+    s = glm.normalize(glm.cross(f, up_vector))
+    u = glm.cross(s, f)
+
+    viewMat = glm.mat4(1.0)
+
+    viewMat[0][0] = s.x
+    viewMat[1][0] = s.y
+    viewMat[2][0] = s.z
+    viewMat[0][1] = u.x
+    viewMat[1][1] = u.y
+    viewMat[2][1] = u.z
+    viewMat[0][2] = -f.x
+    viewMat[1][2] = -f.y
+    viewMat[2][2] = -f.z
+    viewMat[3][0] = -glm.dot(s, position)
+    viewMat[3][1] = -glm.dot(u, position)
+    viewMat[3][2] = glm.dot(f, position)
+
 
 
     if debug_vector:
@@ -218,6 +235,24 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
     right_pos = position + (right * baseline)
     res = glm.distance(position, right_pos)
 
+    T = glm.mat4(1.0)
+    T[3, 0] = baseline
+    T[3, 1] = 0
+    T[3, 2] = 0
+    viewMatRight = T * viewMat
+
+    #rot = qvec2rotmat((qw, qx, qy, qz))
+    #trans = np.array([x, y, z])
+#
+    #Rt = np.zeros((4, 4), dtype=np.float32)
+    #Rt[0:3, 0:3] = rot
+    #Rt[0:3, 3] = trans
+    #Rt[3, 3] = 1
+#
+    #world_to_view = Rt
+    #view_to_world = np.linalg.inv(world_to_view)
+
+
     pose_left = {
         "camera_front": front_vector,
         "camera_up": up_vector,
@@ -229,7 +264,7 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
         "camera_front": front_vector,
         "camera_up": up_vector,
         "camera_position": right_pos,
-        "camera_view": viewMat
+        "camera_view": viewMatRight
     }
     return pose_left, pose_right
 
@@ -482,6 +517,7 @@ def main(trained_model = None, colmap_poses = None):
 
             line_no += 1
         print(f"Found correct number of camera_poses: {len(camera_poses) == 100}")
+
         camerasFilePath = os.path.join(colmap_poses, "cameras.txt")
         cameraFile = open(camerasFilePath, "r")
         for line in cameraFile.readlines():
@@ -493,8 +529,8 @@ def main(trained_model = None, colmap_poses = None):
             height = int(elements[3])
             fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
 
-    #height = 720
-    #width = int(height*2.2222)
+    height = 552
+    width = int(1160)
     g_camera = util.Camera(height, width)
 
     imgui.create_context()
@@ -549,21 +585,22 @@ def main(trained_model = None, colmap_poses = None):
     if gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) != gl.GL_FRAMEBUFFER_COMPLETE:
         print("Error: Framebuffer is not complete.")
     gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)
+    outputFolder = "out"
 
-    scene_folder = "."
+    scene_folder = "0000"
     if trained_model is not None:
         scene_folder = os.path.split(trained_model)[-1]
 
-        if not os.path.exists("out"):
-            os.mkdir("out")
-        if not os.path.exists(f"out/{scene_folder}"):
-            os.mkdir(f"out/{scene_folder}")
-        if not os.path.exists(f"out/{scene_folder}/right"):
-            os.mkdir(f"out/{scene_folder}/right")
-        if not os.path.exists(f"out/{scene_folder}/depth"):
-            os.mkdir(f"out/{scene_folder}/depth")
-        if not os.path.exists(f"out/{scene_folder}/left"):
-            os.mkdir(f"out/{scene_folder}/left")
+    if not os.path.exists(outputFolder):
+        os.mkdir(outputFolder)
+    if not os.path.exists(f"{outputFolder}/{scene_folder}"):
+        os.mkdir(f"{outputFolder}/{scene_folder}")
+    if not os.path.exists(f"{outputFolder}/{scene_folder}/right"):
+        os.mkdir(f"{outputFolder}/{scene_folder}/right")
+    if not os.path.exists(f"{outputFolder}/{scene_folder}/depth"):
+        os.mkdir(f"{outputFolder}/{scene_folder}/depth")
+    if not os.path.exists(f"{outputFolder}/{scene_folder}/left"):
+        os.mkdir(f"{outputFolder}/{scene_folder}/left")
 
 
     saved_image = [False for x in camera_poses]
@@ -586,7 +623,7 @@ def main(trained_model = None, colmap_poses = None):
     g_renderer.sort_and_update(g_camera, use_file, pose)
     update_activated_renderer_state(gaussians)
     frame_counter = 0  # Initialize frame counter
-    csv_file_path = f"out/{scene_folder}/ssim_results.csv"
+    csv_file_path = f"{outputFolder}/{scene_folder}/blur_score.csv"
     file = open(csv_file_path, 'a', newline='')
     writer = csv.writer(file)
     # Optional: Write headers to the CSV file
@@ -594,29 +631,38 @@ def main(trained_model = None, colmap_poses = None):
 
     # Check SSIM with training images
     num_blur_checks = 5
-    path = Path(colmap_poses)
-    images_path = path.parents[1] / "images"
-    # List all image files (assuming .jpg and .png files for this example)
-    image_files = list(images_path.glob('*.jpg')) + list(images_path.glob('*.png'))
-    random.shuffle(image_files)
-    # Open the CSV file in write mode ('w') or append mode ('a') as needed
-    # CSV file to store the results
-    values = []
-    for x in range(num_blur_checks):
-        # Select an image file sequentially from the shuffled list
-        if len(image_files) > 0:  # Check if there are still images left to select
-            selected_image = image_files.pop(0)  # Remove the first image from the list to avoid repetition
-            refImage = cv2.imread(str(selected_image))  # Ensure to convert Path object to string
-            refImage_gray = cv2.cvtColor(refImage, cv2.COLOR_BGR2GRAY)
-            blur_ref = skimage.measure.blur_effect(refImage_gray, h_size=11)
-            values.append(blur_ref)
-            print("Reference blur score: ", blur_ref)
-        else:
-            print("No more unique images available.")
-            break  # or handle according to your needs
-    print("Average blur score: ", sum(values) / len(values))
-    writer.writerow(["Reference:", str(sum(values) / len(values))])
+    if colmap_poses is not None:
+        path = Path(colmap_poses)
+        images_path = path.parents[1] / "images"
+        # List all image files (assuming .jpg and .png files for this example)
+        image_files = list(images_path.glob('*.jpg')) + list(images_path.glob('*.png'))
+        random.shuffle(image_files)
+        # Open the CSV file in write mode ('w') or append mode ('a') as needed
+        # CSV file to store the results
+        values = []
+        try:
+            for x in range(num_blur_checks):
+                # Select an image file sequentially from the shuffled list
+                if len(image_files) > 0:  # Check if there are still images left to select
+                    selected_image = image_files.pop(0)  # Remove the first image from the list to avoid repetition
+                    refImage = cv2.imread(str(selected_image))  # Ensure to convert Path object to string
+                    refImage_gray = cv2.cvtColor(refImage, cv2.COLOR_BGR2GRAY)
+                    blur_ref = skimage.measure.blur_effect(refImage_gray, h_size=11)
+                    values.append(blur_ref)
+                    print("Reference blur score: ", blur_ref)
+                else:
+                    print("No more unique images available.")
+                    break  # or handle according to your needs
+            print("Average blur score: ", sum(values) / len(values))
+            writer.writerow(["Reference:", str(sum(values) / len(values))])
+        except Exception as e:
+            print(e)
+            writer.writerow(["Reference:", 0])
+
     file.close()
+
+    # Compute camera central
+
 
     while not glfw.window_should_close(window):
         file = open(csv_file_path, 'a', newline='')
@@ -634,7 +680,7 @@ def main(trained_model = None, colmap_poses = None):
 
         # Check if 30 frames have passed
         if frame_counter == 30 and animate:
-            pose_index += 5  # Move to the next camera pose
+            pose_index += 1  # Move to the next camera pose
             frame_counter = 0  # Reset the frame counter
 
         # Ensure pose_index doesn't exceed your camera_poses list length
@@ -645,7 +691,6 @@ def main(trained_model = None, colmap_poses = None):
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
         if len(camera_poses) > 0:
             pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center)
-
 
         gl.glClearColor(0, 0, 0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -662,7 +707,7 @@ def main(trained_model = None, colmap_poses = None):
 
         g_renderer.draw()
 
-        if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frames:
+        if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frames or manual_save:
             print(f"Saving from Image ID: {camera_poses[pose_index][0]}. Rendered image name: {pose_index}.png")
             ######### LEFT FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
@@ -701,12 +746,14 @@ def main(trained_model = None, colmap_poses = None):
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure default framebuffer is active for ImGui
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+            g_renderer.set_is_depth_image(1)  # depth
 
             g_renderer.set_render_mod(-1)  # depth
             g_renderer.draw()
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure FBO is bound if not already
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_UNSIGNED_SHORT)
+            g_renderer.set_is_depth_image(0)  # depth
 
             # Convert pixels to a numpy array and then to an image
             imageDepth = Image.frombytes("I;16", (width, height), pixels)
@@ -723,9 +770,9 @@ def main(trained_model = None, colmap_poses = None):
             imageLeft = imageLeft.transpose(Image.FLIP_TOP_BOTTOM)
             imageRight = imageRight.transpose(Image.FLIP_TOP_BOTTOM)
 
-            imageDepth.save(f"out/{scene_folder}/depth/{pose_index}.png")
-            imageRight.save(f"out/{scene_folder}/right/{pose_index}.png")
-            imageLeft.save(f"out/{scene_folder}/left/{pose_index}.png")
+            imageDepth.save(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png")
+            imageRight.save(f"{outputFolder}/{scene_folder}/right/{pose_index}.png")
+            imageLeft.save(f"{outputFolder}/{scene_folder}/left/{pose_index}.png")
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
@@ -876,7 +923,7 @@ def main(trained_model = None, colmap_poses = None):
             imgui.text("Use left click & move to rotate camera")
             imgui.text("Use right click & move to translate camera")
             imgui.text("Press Q/E to roll camera")
-            imgui.text("Use scroll to zoom in/out")
+            imgui.text("Use scroll to zoom in/output")
             imgui.text("Use control panel to change setting")
             imgui.end()
 
@@ -902,4 +949,3 @@ if __name__ == "__main__":
         main(args.gs_model, args.colmap_poses)
     except Exception as e:
         print(f"An error occurred: {e}")
-        main()
