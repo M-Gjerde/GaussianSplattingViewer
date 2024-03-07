@@ -73,7 +73,7 @@ switch_lr_pose = False
 theta = 0
 phi = 0
 radius = 3
-animate = True
+animate = False
 debug_vector = False
 new_camera_pos = False
 
@@ -154,9 +154,9 @@ up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the -y direction
 front_vector = glm.vec3(0, 0, 1)
 #default_forward = glm.vec3(0.0, 0, 1)
 
-last_image_id = 0
-def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0)):
-    global new_camera_pos, up_vector, front_vector, debug_vector,last_image_id
+
+def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0), camera_bb = (0, 1, 0, 1, 0, 1)):
+    global new_camera_pos, up_vector, front_vector, debug_vector
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
     x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
     position = glm.vec3(x, y, z)
@@ -529,8 +529,8 @@ def main(trained_model = None, colmap_poses = None):
             height = int(elements[3])
             fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
 
-    height = 552
-    width = int(1160)
+    height = 522
+    width = 1160
     g_camera = util.Camera(height, width)
 
     imgui.create_context()
@@ -605,9 +605,34 @@ def main(trained_model = None, colmap_poses = None):
 
     saved_image = [False for x in camera_poses]
 
+    camera_bb = 0
+    minX = 10
+    maxX = 0
+    minY = 10
+    maxY = 0
+    minZ = 10
+    maxZ = 0
+
+    for pose in camera_poses:
+        x, y, z = float(pose[5]), float(pose[6]), float(pose[7])
+        if minX > x:
+            minX = x
+        if minY > y:
+            minY = y
+        if minZ > z:
+            minZ = z
+        if maxX < x:
+            maxX = x
+        if maxY < y:
+            maxY = y
+        if maxZ < z:
+            maxZ = z
+
+    camera_bb = (minX, maxX, minY, maxY, minZ, maxZ)
+
     skip_frame = True
     if len(camera_poses) > 0:
-        pose, poseRight = load_camera_positions(camera_poses[pose_index])
+        pose, poseRight = load_camera_positions(camera_poses[pose_index], camera_bb = camera_bb)
     else:
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
@@ -690,7 +715,7 @@ def main(trained_model = None, colmap_poses = None):
 
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
         if len(camera_poses) > 0:
-            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center)
+            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center ,camera_bb = camera_bb )
 
         gl.glClearColor(0, 0, 0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
