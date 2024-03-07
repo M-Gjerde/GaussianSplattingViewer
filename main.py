@@ -62,7 +62,7 @@ switch_lr_pose = False
 theta = 0
 phi = 0
 radius = 3
-animate = True
+animate = False
 debug_vector = False
 new_camera_pos = False
 
@@ -119,7 +119,7 @@ front_vector = glm.vec3(0, 0, 1)
 #default_forward = glm.vec3(0.0, 0, 1)
 
 
-def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0)):
+def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 0, 0), camera_bb = (0, 1, 0, 1, 0, 1)):
     global new_camera_pos, up_vector, front_vector, debug_vector
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
     x, y, z = float(camera_pose[5]), float(camera_pose[6]), float(camera_pose[7])
@@ -163,7 +163,7 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
     baseline = -0.193001 * 5
     transRightMat = glm.translate(glm.mat4(1.0), glm.vec3(baseline, 0.0, 0.0))
     rightViewMat = transRightMat * viewMat
-"""
+
     if bounding_box is not None:
         # Convert bounding box to glm.vec3 for easier comparison
         min_bound = glm.vec3(*bounding_box[0])
@@ -188,8 +188,15 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
         else:
             print("Position is outside the bounding box, no adjustment needed.")
 
+"""
+    rot = glm.mat3_cast(glm.quat(qw, qx, -qy, -qz))
 
-    viewMat = glm.lookAt(position, center, up_vector)
+    front_vector = rot * glm.vec3(0, 0, 1)
+    position.y = -position.y
+    position.z = -position.z
+    up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the -y direction
+
+    viewMat = glm.lookAt(position, front_vector, up_vector)
 
     if new_camera_pos:
         # Take input in the format "x, y, z"
@@ -493,8 +500,8 @@ def main(trained_model = None, colmap_poses = None):
             height = int(elements[3])
             fx, fy, cx, cy = float(elements[4]), float(elements[5]), float(elements[6]), float(elements[7])
 
-    #height = 720
-    #width = int(height*2.2222)
+    height = 522
+    width = 1160
     g_camera = util.Camera(height, width)
 
     imgui.create_context()
@@ -568,9 +575,34 @@ def main(trained_model = None, colmap_poses = None):
 
     saved_image = [False for x in camera_poses]
 
+    camera_bb = 0
+    minX = 10
+    maxX = 0
+    minY = 10
+    maxY = 0
+    minZ = 10
+    maxZ = 0
+
+    for pose in camera_poses:
+        x, y, z = float(pose[5]), float(pose[6]), float(pose[7])
+        if minX > x:
+            minX = x
+        if minY > y:
+            minY = y
+        if minZ > z:
+            minZ = z
+        if maxX < x:
+            maxX = x
+        if maxY < y:
+            maxY = y
+        if maxZ < z:
+            maxZ = z
+
+    camera_bb = (minX, maxX, minY, maxY, minZ, maxZ)
+
     skip_frame = True
     if len(camera_poses) > 0:
-        pose, poseRight = load_camera_positions(camera_poses[pose_index])
+        pose, poseRight = load_camera_positions(camera_poses[pose_index], camera_bb = camera_bb)
     else:
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
@@ -578,7 +610,7 @@ def main(trained_model = None, colmap_poses = None):
     #
     if trained_model is not None:
         gaussians_path = os.path.join(trained_model, "point_cloud/iteration_7000/point_cloud.ply")
-        gaussians, bounding_box, center = util_gau.load_ply(gaussians_path)
+        gaussians, bounding_box, center = util_gau.load_ply(trained_model)
     else:
         gaussians, bounding_box, center = util_gau.naive_gaussian()
 
@@ -593,7 +625,7 @@ def main(trained_model = None, colmap_poses = None):
     writer.writerow(['Rendered ID', 'Blur score 0 - Low and 1- High'])
 
     # Check SSIM with training images
-    num_blur_checks = 5
+    num_blur_checks = 0
     path = Path(colmap_poses)
     images_path = path.parents[1] / "images"
     # List all image files (assuming .jpg and .png files for this example)
@@ -614,8 +646,8 @@ def main(trained_model = None, colmap_poses = None):
         else:
             print("No more unique images available.")
             break  # or handle according to your needs
-    print("Average blur score: ", sum(values) / len(values))
-    writer.writerow(["Reference:", str(sum(values) / len(values))])
+    #print("Average blur score: ", sum(values) / len(values))
+    #writer.writerow(["Reference:", str(sum(values) / len(values))])
     file.close()
 
     while not glfw.window_should_close(window):
@@ -644,7 +676,7 @@ def main(trained_model = None, colmap_poses = None):
 
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
         if len(camera_poses) > 0:
-            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center)
+            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center ,camera_bb = camera_bb )
 
 
         gl.glClearColor(0, 0, 0, 1.0)
