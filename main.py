@@ -73,7 +73,7 @@ switch_lr_pose = False
 theta = 0
 phi = 0
 radius = 3
-animate = False
+animate = True
 debug_vector = False
 new_camera_pos = False
 
@@ -241,11 +241,7 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
     T[3, 2] = 0
     viewMatRight = T * viewMat
 
-    T = glm.mat4(1.0)
-    T[3, 0] = -baseline
-    T[3, 1] = 0
-    T[3, 2] = 0
-    viewMatLeft = T * viewMat
+    viewMatLeft = viewMat
 
     #rot = qvec2rotmat((qw, qx, qy, qz))
     #trans = np.array([x, y, z])
@@ -264,12 +260,6 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
         "camera_view": viewMatLeft
     }
 
-    pose_center = {
-        "camera_front": front_vector,
-        "camera_up": up_vector,
-        "camera_position": position,
-        "camera_view": viewMat
-    }
 
     pose_right = {
         "camera_front": front_vector,
@@ -277,7 +267,7 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
         "camera_position": right_pos,
         "camera_view": viewMatRight
     }
-    return pose_left, pose_center, pose_right
+    return  pose_left, pose_right
 
 
 def generate_sphere_positions(radius_l, theta_l, phi_l):
@@ -619,40 +609,13 @@ def main(trained_model = None, colmap_poses = None):
         os.mkdir(f"{outputFolder}/{scene_folder}/depth")
     if not os.path.exists(f"{outputFolder}/{scene_folder}/left"):
         os.mkdir(f"{outputFolder}/{scene_folder}/left")
-    if not os.path.exists(f"{outputFolder}/{scene_folder}/center"):
-        os.mkdir(f"{outputFolder}/{scene_folder}/center")
 
 
     saved_image = [False for x in camera_poses]
 
-    camera_bb = 0
-    minX = 10
-    maxX = 0
-    minY = 10
-    maxY = 0
-    minZ = 10
-    maxZ = 0
-
-    for pose in camera_poses:
-        x, y, z = float(pose[5]), float(pose[6]), float(pose[7])
-        if minX > x:
-            minX = x
-        if minY > y:
-            minY = y
-        if minZ > z:
-            minZ = z
-        if maxX < x:
-            maxX = x
-        if maxY < y:
-            maxY = y
-        if maxZ < z:
-            maxZ = z
-
-    camera_bb = (minX, maxX, minY, maxY, minZ, maxZ)
-
     skip_frame = True
     if len(camera_poses) > 0:
-        poseLeft, pose, poseRight = load_camera_positions(camera_poses[pose_index], camera_bb = camera_bb)
+        pose, poseRight = load_camera_positions(camera_poses[pose_index])
     else:
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
@@ -725,7 +688,7 @@ def main(trained_model = None, colmap_poses = None):
 
         # Check if 30 frames have passed
         if frame_counter == 30 and animate:
-            pose_index += 1  # Move to the next camera pose
+            pose_index += 24  # Move to the next camera pose
             frame_counter = 0  # Reset the frame counter
 
         # Ensure pose_index doesn't exceed your camera_poses list length
@@ -734,8 +697,8 @@ def main(trained_model = None, colmap_poses = None):
             continue
 
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
-        if len(camera_poses) > 0:
-            poseLeft, pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center ,camera_bb = camera_bb )
+
+        poseLeft, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center)
 
         gl.glClearColor(0, 0, 0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -746,8 +709,10 @@ def main(trained_model = None, colmap_poses = None):
             skip_frames = False
 
         if switch_lr_pose:
+            g_renderer.sort_and_update(g_camera, use_file, poseRight)
             g_renderer.update_camera_pose(g_camera, use_file, poseRight)
         else:
+            g_renderer.sort_and_update(g_camera, use_file, poseLeft)
             g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
 
         g_renderer.draw()
@@ -755,39 +720,25 @@ def main(trained_model = None, colmap_poses = None):
         if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frames or manual_save:
             print(f"Saving from Image ID: {camera_poses[pose_index][0]}. Rendered image name: {pose_index}.png")
             ######### LEFT FBO
-
-            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
-            gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-            g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
-
-            g_renderer.draw()
-
-            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)  # Ensure FBO is bound if not already
-            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
-
-            # Convert pixels to a numpy array and then to an image
-            imageLeft = Image.frombytes("RGB", (width, height), pixels)
-
-            ######### CENTER FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_center)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-            g_renderer.update_camera_pose(g_camera, use_file, pose)
+            g_renderer.sort_and_update(g_camera, use_file, poseLeft)
+            g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
             g_renderer.draw()
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_center)  # Ensure FBO is bound if not already
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
 
             # Convert pixels to a numpy array and then to an image
-            imageCenter = Image.frombytes("RGB", (width, height), pixels)
+            imageLeft = Image.frombytes("RGB", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the imageLeft vertically.
-
 
             ###### RIGHT FBO
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_right)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
-
+            g_renderer.sort_and_update(g_camera, use_file, poseRight)
             g_renderer.update_camera_pose(g_camera, use_file, poseRight)
             g_renderer.draw()
 
@@ -798,7 +749,6 @@ def main(trained_model = None, colmap_poses = None):
             imageRight = Image.frombytes("RGB", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the imageRight vertically.
-
             ####### DEPTH FBO
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)  # Ensure default framebuffer is active for ImGui
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -807,6 +757,7 @@ def main(trained_model = None, colmap_poses = None):
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
             g_renderer.set_is_depth_image(1)  # depth
             g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
+            g_renderer.sort_and_update(g_camera, use_file, poseLeft)
 
             g_renderer.set_render_mod(-1)  # depth
             g_renderer.draw()
@@ -814,15 +765,16 @@ def main(trained_model = None, colmap_poses = None):
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)  # Ensure FBO is bound if not already
             pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_FLOAT)
             g_renderer.set_is_depth_image(0)  # depth
-
             # Convert pixels to a numpy array and then to an image
             imageDepth = Image.frombytes("I;16", (width, height), pixels)
 
             # Convert the raw data to a NumPy array
+            scale = 56.495
             disparity_map = np.frombuffer(pixels, dtype=np.float32).reshape((height, width))
             disparity_map_scaled = ((disparity_map * width) * 56.495).astype(np.uint16)
             disparity_map_rotated = cv2.rotate(disparity_map_scaled, cv2.ROTATE_180)
-            cv2.imwrite(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png", disparity_map_rotated)
+            disparity_map_flipped = cv2.flip(disparity_map_rotated, 1)
+            cv2.imwrite(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png", disparity_map_flipped)
 
             #image_array = np.array(imageDepth, dtype=np.uint16)
             #image_scaled = image_array * 1160
@@ -841,12 +793,10 @@ def main(trained_model = None, colmap_poses = None):
             imageDepth = imageDepth.transpose(Image.FLIP_TOP_BOTTOM)
             imageLeft = imageLeft.transpose(Image.FLIP_TOP_BOTTOM)
             imageRight = imageRight.transpose(Image.FLIP_TOP_BOTTOM)
-            imageCenter = imageCenter.transpose(Image.FLIP_TOP_BOTTOM)
 
             #imageDepth.save(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png")
             imageRight.save(f"{outputFolder}/{scene_folder}/right/{pose_index}.png")
             imageLeft.save(f"{outputFolder}/{scene_folder}/left/{pose_index}.png")
-            imageCenter.save(f"{outputFolder}/{scene_folder}/center/{pose_index}.png")
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)
@@ -1019,7 +969,9 @@ if __name__ == "__main__":
     parser.add_argument('--colmap_poses', type=str)
 
     args = parser.parse_args()
+    main(args.gs_model, args.colmap_poses)
+
     try:
-        main(args.gs_model, args.colmap_poses)
+        pass
     except Exception as e:
         print(f"An error occurred: {e}")

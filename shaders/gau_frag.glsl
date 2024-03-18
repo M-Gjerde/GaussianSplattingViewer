@@ -25,8 +25,8 @@ void main()
     if (opacity < 1.f / 255.f)
         discard;
     FragColor = vec4(color, opacity);
-    if (is_depth_image == 1)
-        FragColor.a = FragColor.a > 0.22 ? 1 : 0;
+    //if (is_depth_image == 1)
+    //    FragColor.a = FragColor.a > 0.22 ? 1 : 0;
 
     // handling special shading effect
     if (render_mod == -3)

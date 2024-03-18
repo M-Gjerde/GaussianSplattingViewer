@@ -59,7 +59,7 @@ def load_image(file_path, color=False):
         image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
         image =  image / 65535.0  # Adjust scale depending on your disparity computation method
         #image = median_filter_float32(image, 5) * 255
-        image *= 255
+        image *= 1160
     return image
 
 def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
@@ -90,8 +90,8 @@ def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
     o3d.visualization.draw_geometries([point_cloud])
 
 if __name__ == "__main__":
-    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0000\\depth\\10.png"
-    color_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0000\\right\\10.png"
+    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\depth\\5.png"
+    left_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\left\\5.png"
     focal_length = 3437.474032508210  # Example focal length in pixels
     baseline =  0.193001 * 5  # Example baseline in meters
     intrinsic_matrix = np.array([[3437.474032508210 / 3, 0, 1160 / 2],  # fx, 0, cx
@@ -99,7 +99,7 @@ if __name__ == "__main__":
                                  [0, 0, 1]])  # Intrinsic matrix of the camera
 
     disparity_image = load_image(disparity_file_path)
-    color_image = load_image(color_file_path, color=True)
+    color_image = load_image(left_file_path, color=True)
     depth_map = disparity_to_depth(disparity_image, focal_length, baseline)
     create_colored_point_cloud(depth_map, color_image, intrinsic_matrix)
 

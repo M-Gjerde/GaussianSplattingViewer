@@ -1,6 +1,7 @@
 import numpy as np
 from plyfile import PlyData
 from dataclasses import dataclass
+import open3d as o3d
 
 @dataclass
 class GaussianData:
@@ -65,7 +66,15 @@ def load_ply(path):
     xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                     np.asarray(plydata.elements[0]["y"]),
                     np.asarray(plydata.elements[0]["z"])),  axis=1)
+
     opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
+
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(xyz)
+    # Define the filename for the output file
+    output_filename = "gaussian_pc.ply"
+    # Write the PointCloud to a PLY file
+    o3d.io.write_point_cloud(output_filename, pcd)
 
     # Calculate bounding box
     min_bound = xyz.min(axis=0)
