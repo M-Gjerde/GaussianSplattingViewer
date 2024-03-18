@@ -176,12 +176,33 @@ void main()
 
 	if (render_mod == -1)
 	{
-	    float baseline = 0.193001 * 5;
-	    float focal_length = 3437.4740325082107 * 0.25;
-        float depth = (-g_pos_view.z) * 1000; // Convert from view space to a positive depth value
-        float disparity = ((baseline * focal_length) / depth);
-        color = vec3(disparity, disparity, disparity);
+	    float baseline = -0.193001 * 5;
+	    //float focal_length = 3437.4740325082107 * 0.25;
+        //float depth = (-g_pos_view.z) * 1000; // Convert from view space to a positive depth value
+        //float disparity = ((baseline * focal_length) / depth);
+        //xp = near * g_pos_view.x / (-g_pos_view.z)
+        //yp = near * g_pos_view.y / (-g_pos_view.z)
+
+        // MVP calculation
+        float image_width = 1160;
+
+        vec4 p_world_l = vec4(get_vec3(start + POS_IDX), 1.f);
+        vec4 p_view_l = view_matrix * p_world_l;
+        vec4 p_screen_l = projection_matrix * p_view_l;
+        vec4 p_ndc_l = p_screen_l / p_screen_l.w;
+
+        vec4 p_world_r = vec4(get_vec3(start + POS_IDX) + vec3(baseline, 0, 0), 1.f);
+        vec4 p_view_r = view_matrix * p_world_r;
+        vec4 p_screen_r = projection_matrix * p_view_r;
+        vec4 p_ndc_r = p_screen_r / p_screen_r.w;
+
+        float x_pix_l = ((p_ndc_l.x + 1) / 2);
+        float x_pix_r = ((p_ndc_r.x + 1) / 2);
+
+        float d = abs(x_pix_l - x_pix_r);
+        color = vec3(d, d, d);
         return;
+
 	}
 
 	// Covert SH to color

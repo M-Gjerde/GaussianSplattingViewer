@@ -10,7 +10,7 @@ raw_data_base_path = r"C:\Users\mgjer\Downloads"
 total_scenes = 270
 
 # Iterate through all scene directories
-for i in range(45, total_scenes):
+for i in range(202, 203):
     # Determine the part number (increment every 20 scenes)
     part_number = i // 20 + 1  # Integer division, starts with part 1 for scenes 0-19
 

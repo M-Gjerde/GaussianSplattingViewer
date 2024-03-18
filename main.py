@@ -241,6 +241,12 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
     T[3, 2] = 0
     viewMatRight = T * viewMat
 
+    T = glm.mat4(1.0)
+    T[3, 0] = -baseline
+    T[3, 1] = 0
+    T[3, 2] = 0
+    viewMatLeft = T * viewMat
+
     #rot = qvec2rotmat((qw, qx, qy, qz))
     #trans = np.array([x, y, z])
 #
@@ -251,9 +257,14 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
 #
     #world_to_view = Rt
     #view_to_world = np.linalg.inv(world_to_view)
-
-
     pose_left = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": position,
+        "camera_view": viewMatLeft
+    }
+
+    pose_center = {
         "camera_front": front_vector,
         "camera_up": up_vector,
         "camera_position": position,
@@ -266,7 +277,7 @@ def load_camera_positions(camera_pose, bounding_box= None, center = glm.vec3(0, 
         "camera_position": right_pos,
         "camera_view": viewMatRight
     }
-    return pose_left, pose_right
+    return pose_left, pose_center, pose_right
 
 
 def generate_sphere_positions(radius_l, theta_l, phi_l):
@@ -561,12 +572,12 @@ def main(trained_model = None, colmap_poses = None):
     #width, height = glfw.get_framebuffer_size(window)
 
     # Step 1: Create an FBO and a texture attachment
-    fbo_left = gl.glGenFramebuffers(1)
-    fbo_left_texture = gl.glGenTextures(1)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_left_texture)
+    fbo_center = gl.glGenFramebuffers(1)
+    fbo_center_texture = gl.glGenTextures(1)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_center_texture)
     gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, width, height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, None)
-    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
-    gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_left_texture, 0)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_center)
+    gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_center_texture, 0)
     fbo_right = gl.glGenFramebuffers(1)
     fbo_right_texture = gl.glGenTextures(1)
     gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_right_texture)
@@ -574,12 +585,19 @@ def main(trained_model = None, colmap_poses = None):
     gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_right)
     gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_right_texture, 0)
     # Step 1: Create an FBO and a texture attachment
-    fbo_depth = gl.glGenFramebuffers(1)
-    fbo_depth_texture = gl.glGenTextures(1)
-    gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_depth_texture)
-    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_R16, width, height, 0, gl.GL_RED, gl.GL_UNSIGNED_SHORT, None)
-    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)
-    gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_depth_texture, 0)
+    fbo_disparity = gl.glGenFramebuffers(1)
+    fbo_disparity_texture = gl.glGenTextures(1)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_disparity_texture)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_R32F, width, height, 0, gl.GL_RED, gl.GL_FLOAT, None)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)
+    gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_disparity_texture, 0)
+
+    fbo_left = gl.glGenFramebuffers(1)
+    fbo_left_texture = gl.glGenTextures(1)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, fbo_left_texture)
+    gl.glTexImage2D(gl.GL_TEXTURE_2D, 0, gl.GL_RGB, width, height, 0, gl.GL_RGB, gl.GL_UNSIGNED_BYTE, None)
+    gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
+    gl.glFramebufferTexture2D(gl.GL_FRAMEBUFFER, gl.GL_COLOR_ATTACHMENT0, gl.GL_TEXTURE_2D, fbo_left_texture, 0)
 
     # Check FBO status
     if gl.glCheckFramebufferStatus(gl.GL_FRAMEBUFFER) != gl.GL_FRAMEBUFFER_COMPLETE:
@@ -601,6 +619,8 @@ def main(trained_model = None, colmap_poses = None):
         os.mkdir(f"{outputFolder}/{scene_folder}/depth")
     if not os.path.exists(f"{outputFolder}/{scene_folder}/left"):
         os.mkdir(f"{outputFolder}/{scene_folder}/left")
+    if not os.path.exists(f"{outputFolder}/{scene_folder}/center"):
+        os.mkdir(f"{outputFolder}/{scene_folder}/center")
 
 
     saved_image = [False for x in camera_poses]
@@ -632,14 +652,14 @@ def main(trained_model = None, colmap_poses = None):
 
     skip_frame = True
     if len(camera_poses) > 0:
-        pose, poseRight = load_camera_positions(camera_poses[pose_index], camera_bb = camera_bb)
+        poseLeft, pose, poseRight = load_camera_positions(camera_poses[pose_index], camera_bb = camera_bb)
     else:
         pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
     # gaussian data
     #
     if trained_model is not None:
-        gaussians_path = os.path.join(trained_model, "point_cloud/iteration_7000/point_cloud.ply")
+        gaussians_path = os.path.join(trained_model, "point_cloud/iteration_30000/point_cloud.ply")
         gaussians, bounding_box, center = util_gau.load_ply(gaussians_path)
     else:
         gaussians, bounding_box, center = util_gau.naive_gaussian()
@@ -715,7 +735,7 @@ def main(trained_model = None, colmap_poses = None):
 
         # pose, poseRight = generate_sphere_positions(radius, theta, phi)
         if len(camera_poses) > 0:
-            pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center ,camera_bb = camera_bb )
+            poseLeft, pose, poseRight = load_camera_positions(camera_poses[pose_index], bounding_box, center ,camera_bb = camera_bb )
 
         gl.glClearColor(0, 0, 0, 1.0)
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
@@ -728,15 +748,17 @@ def main(trained_model = None, colmap_poses = None):
         if switch_lr_pose:
             g_renderer.update_camera_pose(g_camera, use_file, poseRight)
         else:
-            g_renderer.update_camera_pose(g_camera, use_file, pose)
+            g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
 
         g_renderer.draw()
 
         if len(camera_poses) > 0 and (manual_save or saved_image[pose_index] is False) and not skip_frames or manual_save:
             print(f"Saving from Image ID: {camera_poses[pose_index][0]}. Rendered image name: {pose_index}.png")
             ######### LEFT FBO
+
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_left)
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+            g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
 
             g_renderer.draw()
 
@@ -745,6 +767,18 @@ def main(trained_model = None, colmap_poses = None):
 
             # Convert pixels to a numpy array and then to an image
             imageLeft = Image.frombytes("RGB", (width, height), pixels)
+
+            ######### CENTER FBO
+            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_center)
+            gl.glClear(gl.GL_COLOR_BUFFER_BIT)
+            g_renderer.update_camera_pose(g_camera, use_file, pose)
+            g_renderer.draw()
+
+            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_center)  # Ensure FBO is bound if not already
+            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RGB, gl.GL_UNSIGNED_BYTE)
+
+            # Convert pixels to a numpy array and then to an image
+            imageCenter = Image.frombytes("RGB", (width, height), pixels)
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the imageLeft vertically.
 
@@ -766,22 +800,35 @@ def main(trained_model = None, colmap_poses = None):
             # We need to flip the imageRight vertically.
 
             ####### DEPTH FBO
-            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure default framebuffer is active for ImGui
+            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)  # Ensure default framebuffer is active for ImGui
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
-            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure default framebuffer is active for ImGui
+            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)  # Ensure default framebuffer is active for ImGui
             gl.glClear(gl.GL_COLOR_BUFFER_BIT)
             g_renderer.set_is_depth_image(1)  # depth
+            g_renderer.update_camera_pose(g_camera, use_file, poseLeft)
 
             g_renderer.set_render_mod(-1)  # depth
             g_renderer.draw()
 
-            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_depth)  # Ensure FBO is bound if not already
-            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_UNSIGNED_SHORT)
+            gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, fbo_disparity)  # Ensure FBO is bound if not already
+            pixels = gl.glReadPixels(0, 0, width, height, gl.GL_RED, gl.GL_FLOAT)
             g_renderer.set_is_depth_image(0)  # depth
 
             # Convert pixels to a numpy array and then to an image
             imageDepth = Image.frombytes("I;16", (width, height), pixels)
+
+            # Convert the raw data to a NumPy array
+            disparity_map = np.frombuffer(pixels, dtype=np.float32).reshape((height, width))
+            disparity_map_scaled = ((disparity_map * width) * 56.495).astype(np.uint16)
+            disparity_map_rotated = cv2.rotate(disparity_map_scaled, cv2.ROTATE_180)
+            cv2.imwrite(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png", disparity_map_rotated)
+
+            #image_array = np.array(imageDepth, dtype=np.uint16)
+            #image_scaled = image_array * 1160
+            #image_scaled = np.clip(image_scaled, 0, 65535).astype(np.uint16)
+            #imageDepth = Image.fromarray(image_scaled)
+
             # OpenGL's origin is in the bottom-left corner and PIL's is in the top-left.
             # We need to flip the imageDepth vertically.
 
@@ -794,10 +841,12 @@ def main(trained_model = None, colmap_poses = None):
             imageDepth = imageDepth.transpose(Image.FLIP_TOP_BOTTOM)
             imageLeft = imageLeft.transpose(Image.FLIP_TOP_BOTTOM)
             imageRight = imageRight.transpose(Image.FLIP_TOP_BOTTOM)
+            imageCenter = imageCenter.transpose(Image.FLIP_TOP_BOTTOM)
 
-            imageDepth.save(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png")
+            #imageDepth.save(f"{outputFolder}/{scene_folder}/depth/{pose_index}.png")
             imageRight.save(f"{outputFolder}/{scene_folder}/right/{pose_index}.png")
             imageLeft.save(f"{outputFolder}/{scene_folder}/left/{pose_index}.png")
+            imageCenter.save(f"{outputFolder}/{scene_folder}/center/{pose_index}.png")
 
             gl.glBindFramebuffer(gl.GL_FRAMEBUFFER, 0)  # Ensure default framebuffer is active for ImGui
             g_renderer.set_render_mod(g_render_mode - 3)

@@ -4,7 +4,7 @@ import datetime
 # Base paths for the gs_model and colmap_poses directories
 import time
 
-gs_model_base_path = r"C:\Users\mgjer\PycharmProjects\GaussianSplattingViewer\output\scene_"
+gs_model_base_path = r"C:\Users\mgjer\PycharmProjects\GaussianSplattingViewer\out_trio\scene_"
 raw_data_base_path = r"C:\Users\mgjer\Downloads"
 
 # Total number of scenes to process

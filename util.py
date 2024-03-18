@@ -11,7 +11,7 @@ class Camera:
         self.azimuth = 60
         self.elevation = 30
         self.arcball_translate = glm.vec3(0.0, 0.0, 0.0)
-        self.znear = 0.0001
+        self.znear = 0.1
         self.zfar = 100
         self.h = h
         self.w = w
