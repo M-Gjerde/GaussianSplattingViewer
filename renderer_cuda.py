@@ -136,7 +136,7 @@ class CUDARenderer(GaussianRenderBase):
         self.gaussians = gaus_cuda_from_cpu(gaus)
         self.raster_settings["sh_degree"] = int(np.round(np.sqrt(self.gaussians.sh_dim))) - 1
 
-    def sort_and_update(self, camera: util.Camera):
+    def sort_and_update(self, camera: util.Camera, use_file, pose):
         pass
     
     def set_scale_modifier(self, modifier):
@@ -178,11 +178,18 @@ class CUDARenderer(GaussianRenderBase):
         gl.glViewport(0, 0, w, h)
         self.set_gl_texture(h, w)
 
-    def update_camera_pose(self, camera: util.Camera):
-        view_matrix = camera.get_view_matrix()
-        view_matrix[[0, 2], :] = -view_matrix[[0, 2], :]
-        proj = camera.get_project_matrix() @ view_matrix
-        self.raster_settings["viewmatrix"] = torch.tensor(view_matrix.T).float().cuda()
+    def update_camera_pose(self, camera: util.Camera, use_file, pose):
+
+        if use_file:
+            view_mat = camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"], pose["camera_view"])
+            camera.position = pose["camera_position"]
+        else:
+            view_mat = camera.get_view_matrix(True)
+
+        view_mat[[0, 2], :] = -view_mat[[0, 2], :]
+        proj = camera.get_project_matrix() @ view_mat
+
+        self.raster_settings["viewmatrix"] = torch.tensor(view_mat.T).float().cuda()
         self.raster_settings["campos"] = torch.tensor(camera.position).float().cuda()
         self.raster_settings["projmatrix"] = torch.tensor(proj.T).float().cuda()
 

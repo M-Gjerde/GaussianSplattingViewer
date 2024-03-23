@@ -102,10 +102,10 @@ class GaussianRenderBase:
 
 
 class OpenGLRenderer(GaussianRenderBase):
-    def __init__(self, w, h):
+    def __init__(self, w, h, shaderpath):
         super().__init__()
         gl.glViewport(0, 0, w, h)
-        self.program = util.load_shaders('shaders/gau_vert.glsl', 'shaders/gau_frag.glsl')
+        self.program = util.load_shaders(f'shaders/{shaderpath}.glsl', 'shaders/gau_frag.glsl')
 
         # Vertex data for a quad
         self.quad_v = np.array([
@@ -160,6 +160,7 @@ class OpenGLRenderer(GaussianRenderBase):
     def update_camera_pose(self, camera: util.Camera, use_file, pose):
         if use_file:
             view_mat = camera.get_view_matrix(True, pose["camera_front"], pose["camera_position"], pose["camera_up"], pose["camera_view"])
+            camera.position = pose["camera_position"]
         else:
             view_mat = camera.get_view_matrix(True)
 

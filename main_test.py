@@ -165,33 +165,20 @@ front_vector = glm.vec3(0, 0, 1)
 # default_forward = glm.vec3(0.0, 0, 1)
 
 def quaternion_to_rotation_matrix(qw, qx, qy, qz):
-    norm = np.linalg.norm(np.array([qw, qx, qy, qz]))
-    if norm == 0:
-        # Avoid division by zero
-        raise ValueError("Cannot normalize a zero-norm quaternion.")
-    qw, qx, qy, qz = np.array([qw, qx, qy, qz]) / norm
+    """Converts a quaternion into a rotation matrix."""
+    x2, y2, z2 = qx + qx, qy + qy, qz + qz
+    xx, yy, zz = qx * x2, qy * y2, qz * z2
+    wx, wy, wz = qw * x2, qw * y2, qw * z2
+    xy, xz, yz = qx * y2, qx * z2, qy * z2
 
-    # Now create the rotation matrix
-    R = np.array([
-        [1 - 2 * qy ** 2 - 2 * qz ** 2, 2 * qx * qy - 2 * qz * qw, 2 * qx * qz + 2 * qy * qw],
-        [2 * qx * qy + 2 * qz * qw, 1 - 2 * qx ** 2 - 2 * qz ** 2, 2 * qy * qz - 2 * qx * qw],
-        [2 * qx * qz - 2 * qy * qw, 2 * qy * qz + 2 * qx * qw, 1 - 2 * qx ** 2 - 2 * qy ** 2]
-    ])
-
-    return R
+    return np.array([[1 - (yy + zz), xy - wz, xz + wy],
+                     [xy + wz, 1 - (xx + zz), yz - wx],
+                     [xz - wy, yz + wx, 1 - (xx + yy)]])
 
 
 def apply_rotation(v, R):
     """Applies rotation to a vector."""
     return np.dot(R, v)
-
-
-def normalize_vector(v):
-    """Normalize a numpy vector."""
-    norm = np.linalg.norm(v)
-    if norm == 0:
-        return v  # Return the original vector if its norm is zero
-    return v / norm
 
 
 def create_look_at_from_colmap(tx, ty, tz, qw, qx, qy, qz):
@@ -202,7 +189,7 @@ def create_look_at_from_colmap(tx, ty, tz, qw, qx, qy, qz):
     z_flip_matrix = np.diag([1, 1, -1])
     rot_matrix_flip = np.dot(rot_matrix, z_flip_matrix)
     # Define forward and up vectors in OpenGL camera space
-    forward_vector = np.array([0, 0, -1])  # Assuming COLMAP's forward is +Z, invert for OpenGL
+    forward_vector = np.array([0, 0, -1]) # Assuming COLMAP's forward is +Z, invert for OpenGL
     up_vector = np.array([0, -1, 0])
 
     # Apply rotation to the forward and up vectors
@@ -227,7 +214,7 @@ def look_at(camera_pos, center_point, up_vector):
     right = np.cross(forward, up)
     right = right / np.linalg.norm(right)
 
-    # Recalculate up vector to ensures orthogonality
+    # Recalculate up vector to ensure orthogonality
     up = np.cross(right, forward)
 
     # Create lookAt matrix
@@ -239,10 +226,8 @@ def look_at(camera_pos, center_point, up_vector):
 
     return mat.transpose()  # Transpose for column-major order expected by OpenGL
 
-
 def colmap_to_camera_position_2(tx, ty, tz):
     return glm.vec3(-tx, -ty, -tz)
-
 
 def apply_quat_to_vec(quat, vec):
     """Manually applies a quaternion rotation to a vector."""
@@ -252,8 +237,6 @@ def apply_quat_to_vec(quat, vec):
     uv *= (2.0 * quat.w)
     uuv *= 2.0
     return vec + uv + uuv
-
-
 def create_look_at_from_colmap_2(tx, ty, tz, qw, qx, qy, qz):
     camera_position = colmap_to_camera_position_2(tx, ty, tz)
     camera_orientation = glm.quat(qw, qx, qy, qz)
@@ -271,7 +254,6 @@ def create_look_at_from_colmap_2(tx, ty, tz, qw, qx, qy, qz):
 
     return glm.lookAt(camera_position, center_point, world_up)
 
-
 def load_camera_positions(camera_pose, bounding_box=None, center=glm.vec3(0, 0, 0), camera_bb=(0, 1, 0, 1, 0, 1)):
     global new_camera_pos, up_vector, front_vector, debug_vector
     qw, qx, qy, qz = float(camera_pose[1]), float(camera_pose[2]), float(camera_pose[3]), float(camera_pose[4])
@@ -284,14 +266,14 @@ def load_camera_positions(camera_pose, bounding_box=None, center=glm.vec3(0, 0, 
             # Convert bounding box to glm.vec3 for easier comparison
             min_bound = glm.vec3(*bounding_box[0])
             max_bound = glm.vec3(*bounding_box[1])
-
+    
             # Check if the position is inside the bounding box
             is_inside = all([
                 min_bound.x <= position.x <= max_bound.x,
                 min_bound.y <= position.y <= max_bound.y,
                 min_bound.z <= position.z <= max_bound.z,
             ])
-
+    
             # If inside or too close, adjust or discard
             if is_inside:
                 # This is a simple strategy: move the position further away along the vector from center to position
@@ -314,12 +296,12 @@ def load_camera_positions(camera_pose, bounding_box=None, center=glm.vec3(0, 0, 
     viewMat = getWorld2View2(rot, T).transpose()
 
     # Example usage
-    # tx, ty, tz = 1, 2, 3  # Example translation
-    # qw, qx, qy, qz = 0.1, 0.2, 0.3, 0.4  # Example quaternion
+   #tx, ty, tz = 1, 2, 3  # Example translation
+   #qw, qx, qy, qz = 0.1, 0.2, 0.3, 0.4  # Example quaternion
     camera_pos, center_point, up_vector = create_look_at_from_colmap(x, y, z, qw, qx, qy, qz)
 
-    viewMat = glm.lookAtRH(glm.vec3(camera_pos), glm.vec3(center_point), glm.vec3(up_vector))
-    # viewMat = look_at(camera_pos, center_point, up_vector).astype(np.float32)
+    viewMat = glm.lookAt(glm.vec3(camera_pos), glm.vec3(center_point), glm.vec3(up_vector))
+    #viewMat = look_at(camera_pos, center_point, up_vector).astype(np.float32)
 
     # Convert quaternion to rotation matrix
     rot_matrix = glm.mat4_cast(glm.quat(qw, qx, -qy, -qz))
@@ -327,51 +309,51 @@ def load_camera_positions(camera_pose, bounding_box=None, center=glm.vec3(0, 0, 
     # rot180[1][1] *= -1
     # rot180[2][2] *= -1
     # Default OpenGL forward vector
-    # forward_vec_default = glm.vec4(0, 0, -1, 0)
+   # forward_vec_default = glm.vec4(0, 0, -1, 0)
 
     # Apply rotation to get the forward vector
-    # forward_vec_rotated = rot_matrix * forward_vec_default
+    #forward_vec_rotated = rot_matrix * forward_vec_default
 
     # Convert to a glm.vec3 for convenience if needed (discard w component)
-    # f = glm.normalize(glm.vec3(forward_vec_rotated))
+    #f = glm.normalize(glm.vec3(forward_vec_rotated))
 
-    # position.y = -position.y
-    # position.z = -position.z
+    #position.y = -position.y
+    #position.z = -position.z
 
     # forward_vec.y = -forward_vec.y
     # forward_vec.z = -forward_vec.z
 
-    # f = glm.normalize(center - position)
+    #f = glm.normalize(center - position)
     # f = forward_vec
-    # s = glm.normalize(glm.cross(f, up_vector))
-    # u = glm.cross(s, f)
+    #s = glm.normalize(glm.cross(f, up_vector))
+    #u = glm.cross(s, f)
 
-    # viewMat = glm.mat4(1.0)
-    #
-    # viewMat[0][0] = s.x
-    # viewMat[1][0] = s.y
-    # viewMat[2][0] = s.z
-    # viewMat[0][1] = 0
-    # viewMat[1][1] = -1
-    # viewMat[2][1] = 0
-    # viewMat[0][2] = -f.x
-    # viewMat[1][2] = -f.y
-    # viewMat[2][2] = -f.z
-    # viewMat[3][0] = position.x
-    # viewMat[3][1] = position.y
-    # viewMat[3][2] = position.z
+    #viewMat = glm.mat4(1.0)
+#
+    #viewMat[0][0] = s.x
+    #viewMat[1][0] = s.y
+    #viewMat[2][0] = s.z
+    #viewMat[0][1] = 0
+    #viewMat[1][1] = -1
+    #viewMat[2][1] = 0
+    #viewMat[0][2] = -f.x
+    #viewMat[1][2] = -f.y
+    #viewMat[2][2] = -f.z
+    #viewMat[3][0] = position.x
+    #viewMat[3][1] = position.y
+    #viewMat[3][2] = position.z
 
     if debug_vector:
-        # print("colmap oriented: ", forward_vec)
+        #print("colmap oriented: ", forward_vec)
         print("center oriented: ", glm.normalize(center - position))
         print("up vector: ", up_vector)
         debug_vector = False
 
     # Right vector:
-    # right = glm.normalize(glm.cross(front_vector, up_vector))
+    #right = glm.normalize(glm.cross(front_vector, up_vector))
 
-    # right_pos = position + (right * baseline)
-    # res = glm.distance(position, right_pos)
+    #right_pos = position + (right * baseline)
+    #res = glm.distance(position, right_pos)
 
     T = glm.mat4(1.0)
     T[3, 0] = baseline
@@ -394,17 +376,53 @@ def load_camera_positions(camera_pose, bounding_box=None, center=glm.vec3(0, 0, 
     pose_left = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": camera_pos,
+        "camera_position": position,
         "camera_view": viewMatLeft
     }
 
     pose_right = {
         "camera_front": front_vector,
         "camera_up": up_vector,
-        "camera_position": glm.vec4(glm.inverse(viewMatRight)[3]),
+        "camera_position": position,
         "camera_view": viewMatRight
     }
     return pose_left, pose_right
+
+
+def generate_sphere_positions(radius_l, theta_l, phi_l):
+    positions = []
+    theta_l = glm.radians(theta_l)
+    phi_l = glm.radians(phi_l)
+    x = radius_l * np.sin(theta_l) * np.cos(phi_l)
+    y = radius_l * np.sin(theta_l) * np.sin(phi_l)
+    z = radius_l * np.cos(theta_l)
+
+    position = glm.vec3(x, y, z)
+    front_vector = -glm.normalize(position)  # Normalize and invert to face origin
+    up_vector = glm.vec3(0, -1, 0)  # Assuming 'up' is in the y-direction
+
+    # Right vector:
+    right = glm.normalize(glm.cross(front_vector, up_vector))
+    baseline = 0.193001
+
+    right_pos = position + (right * baseline)
+    res = glm.distance(position, right_pos)
+
+    pose = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": position,
+        "camera_view": glm.mat4(1.0),
+    }
+
+    poseRight = {
+        "camera_front": front_vector,
+        "camera_up": up_vector,
+        "camera_position": right_pos,
+        "camera_view": glm.mat4(1.0),
+    }
+
+    return pose, poseRight
 
 
 def mouse_button_callback(window, button, action, mod):
@@ -653,8 +671,8 @@ def main(trained_model=None, colmap_poses=None):
     # init renderer
     g_renderer_list[BACKEND_OGL] = OpenGLRenderer(g_camera.w, g_camera.h, "gau_vert")
 
-    from renderer_cuda import CUDARenderer
-    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
+    #    from renderer_cuda import CUDARenderer
+    #    g_renderer_list += [CUDARenderer(g_camera.w, g_camera.h)]
 
     g_renderer_idx = BACKEND_OGL
     g_renderer = g_renderer_list[g_renderer_idx]
@@ -715,27 +733,27 @@ def main(trained_model=None, colmap_poses=None):
     skip_frame = True
     if len(camera_poses) > 0:
         pose, poseRight = load_camera_positions(camera_poses[pose_index])
+    else:
+        pose, poseRight = generate_sphere_positions(radius, theta, phi)
 
     # gaussian data
     #
     if trained_model is not None:
         gaussians_path = os.path.join(trained_model, "point_cloud/iteration_30000/point_cloud.ply")
-        #gaussians_path = os.path.join(trained_model, "point_cloud/iteration_7000/point_cloud.ply")
         print("Loading gaussians")
         gaussians, bounding_box, center = util_gau.load_ply(gaussians_path)
     else:
         gaussians, bounding_box, center = util_gau.naive_gaussian()
 
         # Extract x, y, z positions and create the additional attributes in one go
-        new_xyz = np.array([[float(camera_poses[i][5]), float(camera_poses[i][6]), float(camera_poses[i][7])] for i in
-                            range(len(camera_poses))]).astype(np.float32)
+        new_xyz = np.array([[float(camera_poses[i][5]), float(camera_poses[i][6]), float(camera_poses[i][7])] for i in range(len(camera_poses))]).astype(np.float32)
         new_opacity = np.zeros((len(camera_poses), 1)).astype(np.float32)
         new_scale = np.array([[0.03, 0.03, 0.03] for _ in range(len(camera_poses))]).astype(np.float32)
         new_rot = np.array([[1, 0, 0, 0] for _ in range(len(camera_poses))]).astype(np.float32)
         new_sh = np.array([[1] * 48 for _ in range(len(camera_poses))]).astype(np.float32)
 
-        # new_sh = (new_sh - 0.5) * 0.28209
-        # new_sh = new_sh.astype(np.float32)
+        #new_sh = (new_sh - 0.5) * 0.28209
+        #new_sh = new_sh.astype(np.float32)
         # Concatenate the new values with the existing arrays in gaussians
         gaussians.xyz = np.concatenate((gaussians.xyz, new_xyz), axis=0)
         print("Adding camera position gaussians")
@@ -822,7 +840,6 @@ def main(trained_model=None, colmap_poses=None):
         gl.glClear(gl.GL_COLOR_BUFFER_BIT)
 
         update_camera_intrin_lazy()
-        g_renderer.update_camera_intrin(g_camera)
 
         if frame_counter == 4:
             skip_frames = False

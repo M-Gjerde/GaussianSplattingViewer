@@ -1,3 +1,5 @@
+import math
+
 from OpenGL.GL import *
 import OpenGL.GL.shaders as shaders
 import numpy as np
@@ -15,7 +17,7 @@ class Camera:
         self.zfar = 100
         self.h = h
         self.w = w
-        self.fovy = 0.7
+        self.fovy = 2 * math.atan(2088. / (3443.915946 * 2))
         self.position = np.array([0.0, 0.0, 3.0]).astype(np.float32)
         self.zoomVal = 1.0
         self.target = np.array([0.0, 0.0, 0.0]).astype(np.float32)
@@ -56,15 +58,26 @@ class Camera:
     def get_view_matrix(self, arcball=True, front=None, pos=None, up=None, view=None):
         if arcball:
             if front is not None:
-                target = pos + front
                 if view is not None:
                     return np.array(view)
+
+                target = pos + front
                 return np.array(glm.lookAt(pos, target, up))
             else:
                 target = self.camera_position + self.camera_front
                 return np.array(glm.lookAt(self.camera_position, target, self.camera_up))
         else:
             return np.array(glm.lookAt(self.position, self.target, self.up))
+
+    def perspective(self, fov, aspect, near, far):
+        f = 1 / np.tan(fov / 2.0)
+        mat = np.zeros((4, 4))
+        mat[0, 0] = f / aspect
+        mat[1, 1] = f
+        mat[2, 2] = -(far + near) / (far - near)
+        mat[2, 3] = -(2.0 * far * near) / (far - near)
+        mat[3, 2] = -1.0
+        return mat
 
     def get_project_matrix(self):
         # htanx, htany, focal = self.get_htanfovxy_focal()
@@ -75,17 +88,27 @@ class Camera:
         #     0, 0, self.zfar / f_n, - 2 * self.zfar * self.znear / f_n,
         #     0, 0, 1, 0
         # ])
+
+        aspect = self.w / self.h
+        #self.fovy = 2 * math.atan(2088. / (3443.915946 * 2))
+
         project_mat = glm.perspective(
             self.fovy,
-            self.w / self.h,
+            aspect,
             self.znear,
             self.zfar
         )
-        return np.array(project_mat).astype(np.float32)
+        near = 0.1  # Near clipping plane
+        far = 100.0  # Far clipping plane
+        perspective_matrix = self.perspective(self.fovy, aspect, near, far)
+
+        return np.array(perspective_matrix).astype(np.float32)
 
     def get_htanfovxy_focal(self):
+
         htany = np.tan(self.fovy / 2)
-        htanx = htany / self.h * self.w
+        aspect_ratio = self.w / self.h  # Correct aspect ratio calculation
+        htanx = htany * aspect_ratio
         focal = self.h / (2 * htany)
         return [htanx, htany, focal]
 

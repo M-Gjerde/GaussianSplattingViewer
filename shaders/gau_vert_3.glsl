@@ -148,12 +148,7 @@ void main()
 	vec3 g_scale = get_vec3(start + SCALE_IDX);
 	float g_opacity = g_data[start + OPACITY_IDX];
 
-	mat3 cov3d;
-	if (render_mod == -1){
-		cov3d = computeCov3D(g_scale * scale_modifier * 1.2, g_rot);
-	} else {
-	 cov3d = computeCov3D(g_scale * scale_modifier, g_rot);
-	 }
+    mat3 cov3d = computeCov3D(g_scale * scale_modifier, g_rot);
     vec2 wh = 2 * hfovxy_focal.xy * hfovxy_focal.z;
     vec3 cov2d = computeCov2D(g_pos_view, 
                               hfovxy_focal.z, 
@@ -167,7 +162,7 @@ void main()
 	float det = (cov2d.x * cov2d.z - cov2d.y * cov2d.y);
 	if (det == 0.0f)
 		gl_Position = vec4(0.f, 0.f, 0.f, 0.f);
-
+    
     float det_inv = 1.f / det;
 	conic = vec3(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
     

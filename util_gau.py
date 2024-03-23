@@ -69,12 +69,12 @@ def load_ply(path):
 
     opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
 
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(xyz)
-    # Define the filename for the output file
-    output_filename = "gaussian_pc.ply"
-    # Write the PointCloud to a PLY file
-    o3d.io.write_point_cloud(output_filename, pcd)
+    #pcd = o3d.geometry.PointCloud()
+    #pcd.points = o3d.utility.Vector3dVector(xyz)
+    ## Define the filename for the output file
+    #output_filename = "gaussian_pc.ply"
+    ## Write the PointCloud to a PLY file
+    #o3d.io.write_point_cloud(output_filename, pcd)
 
     # Calculate bounding box
     min_bound = xyz.min(axis=0)
