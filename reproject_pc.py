@@ -87,19 +87,38 @@ def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
                            [0, 0, -1, 0],
                            [0, 0, 0, 1]])
     # Visualize the point cloud
-    o3d.visualization.draw_geometries([point_cloud])
+    # Create a Visualizer object
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    # Set the background color to dark grey
+    vis.get_render_option().background_color = np.array([0.2, 0.2, 0.2])
+
+    # Add the point cloud to the Visualizer
+    vis.add_geometry(point_cloud)
+
+    # Run the Visualizer
+    vis.run()
+
+    # Destroy the Visualizer window
+    vis.destroy_window()
 
 if __name__ == "__main__":
-    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\depth\\5.png"
-    left_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out\\scene_0021\\left\\5.png"
-    focal_length = 3437.474032508210  # Example focal length in pixels
-    baseline =  0.193001 * 5  # Example baseline in meters
-    intrinsic_matrix = np.array([[3437.474032508210 / 3, 0, 1160 / 2],  # fx, 0, cx
-                                 [0, 3443.9159462085058 / 3, 552 / 2],  # 0, fy, cy
+    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out_baseline_05\\scene_0000\\depth\\37.png"
+    left_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out_baseline_05\\scene_0000\\left\\37.png"
+    disparity_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\disparity\\IMG_20220818_174000.png"
+    left_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\left\\IMG_20220818_174000.jpg"
+    fx = 3439.3083700227126 / 4
+    fy = 3445.0110843463276 / 4
+    cx = 2320 / 4
+    cy = 1044 / 4
+    baseline =  0.5
+    intrinsic_matrix = np.array([[fx, 0, cx ],  # fx, 0, cx
+                                 [0, fy, cy ],  # 0, fy, cy
                                  [0, 0, 1]])  # Intrinsic matrix of the camera
 
     disparity_image = load_image(disparity_file_path)
     color_image = load_image(left_file_path, color=True)
-    depth_map = disparity_to_depth(disparity_image, focal_length, baseline)
+    depth_map = disparity_to_depth(disparity_image, fx, baseline)
     create_colored_point_cloud(depth_map, color_image, intrinsic_matrix)
 

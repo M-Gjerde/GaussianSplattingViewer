@@ -1,7 +1,7 @@
 # Plotting
 from matplotlib import pyplot as plt
 import numpy as np
-from sklearn.metrics import mean_absolute_error, median_absolute_error
+from sklearn.metrics import mean_absolute_error, median_absolute_error, mean_squared_error
 
 # Load the data from the provided file
 blur_scores = np.load('./blur_calculation/blur_scores.npy')
@@ -33,16 +33,32 @@ plt.plot(smoothed_index_array, smoothed_pts[:, 0], label='Input views (Smoothed)
 plt.plot(smoothed_index_array, smoothed_pts[:, 1], label='NeRF-supervised (Smoothed)', color='darkgreen', linewidth=2)
 plt.plot(smoothed_index_array, smoothed_pts[:, 2], label='3DGS-supervised (Smoothed)', color='darkblue', linewidth=2)
 
-plt.xlabel('Index')
-plt.ylabel('Value')
-plt.title('Smooth Line Plot for Each Column')
+#plt.title('Smooth Line Plot for Each Column')
 plt.legend()
-plt.show()
 
+# Adjust subplot parameters to reduce whitespace
+plt.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.01)
+
+# To reduce whitespace further, especially around the saved figure, you can use tight_layout
+plt.tight_layout()
+
+
+#plt.xlabel('Scene', fontsize='large')
+#plt.ylabel('Number of Points Removed', fontsize='large')
+#plt.title('Comparison of Outliers Removed by 3DGS and NeRF', fontsize='large')
+plt.grid(False)
+plt.legend(prop={'size': 22}, loc='upper left')  # Adjust the size as needed
+plt.legend(prop={'size': 20})  # Adjust the size as needed
+
+plt.show()
 
 # Calculate MAE
 mae_nerf = mean_absolute_error(smoothed_pts[:, 0], smoothed_pts[:, 1]) * 100
 mae_3dgs = mean_absolute_error(smoothed_pts[:, 0], smoothed_pts[:, 2]) * 100
+
+# Calculate MAE
+mad_nerf = mean_squared_error(smoothed_pts[:, 0], smoothed_pts[:, 1]) * 1000
+mad_3dgs = mean_squared_error(smoothed_pts[:, 0], smoothed_pts[:, 2]) * 1000
 
 # Calculate MAD
 mad_nerf = np.median(np.abs(smoothed_pts[:, 0] - np.median(smoothed_pts[:, 1]))) * 100

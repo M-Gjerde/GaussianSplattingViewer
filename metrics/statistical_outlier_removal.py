@@ -132,6 +132,7 @@ np.random.seed(42)
 
 skip_parts = [7, 19, 30, 37, 21]
 
+percentages = []
 # Iterate through all scene directories
 for i in range(0, parts * 20):
     # Determine the part number (increment every 20 scenes)
@@ -182,7 +183,17 @@ for i in range(0, parts * 20):
 
             disparity_nerf = load_image(nerf_file_name)
             disparity_nerf_ao = load_image(nerf_AO_file_name, True)
-            mask = (disparity_nerf_ao < 0.75).astype(np.uint8)
+            mask = (disparity_nerf_ao < 0.5).astype(np.uint8)
+
+            filtered_elements_count = np.count_nonzero(mask)
+            total_points = disparity_nerf_ao.size
+
+            # Calculate the percentage of filtered points
+            percentage_filtered = (filtered_elements_count / total_points) * 100
+            percentages.append(percentage_filtered)
+            print(f"filtered elements: {filtered_elements_count}, percentage: {percentage_filtered}%")
+
+
             disparity_nerf = cv2.bitwise_and(disparity_nerf, disparity_nerf, mask=mask)
 
             depth_map_3dgs = disparity_to_depth(disparity_3dgs, focal_length, baseline)
@@ -215,9 +226,11 @@ for i in range(0, parts * 20):
             print(e)
 
 
-folder = "AO_th_0.75"
+folder = "AO_th_0.5"
 if not os.path.exists(folder):
     os.mkdir(folder)
 
+
+print("Mean percentage filtered", np.mean(np.array(percentages)), np.std(np.array(percentages)))
 np.save(f"./{folder}/removed_nerf_pts.npy", np.array(removed_nerf_pts))
 np.save(f"./{folder}/removed_3dgs_pts.npy", np.array(removed_3dgs_pts))
