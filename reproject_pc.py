@@ -1,7 +1,9 @@
 import numpy as np
 import open3d as o3d
 import cv2  # For image operations
-#from tqdm import tqdm
+
+
+# from tqdm import tqdm
 
 
 def median_filter_float32(image, kernel_size):
@@ -39,13 +41,15 @@ def median_filter_float32(image, kernel_size):
 
     return filtered_image
 
+
 def disparity_to_depth(disparity_image, focal_length, baseline):
     # Convert disparity image to depth map
     disparity_image[disparity_image == 0] = 0.1  # Avoid division by zero
     depth_map = (focal_length * baseline) / disparity_image
     return depth_map
 
-def load_image(file_path, color=False):
+
+def load_image(file_path, color=False, old=False):
     """
     Load an image from file. Can load in grayscale or color.
     """
@@ -57,10 +61,13 @@ def load_image(file_path, color=False):
     else:
         # Load disparity image (assuming 16-bit PNG)
         image = cv2.imread(file_path, cv2.IMREAD_UNCHANGED).astype(np.float32)
-        image =  image / 65535.0  # Adjust scale depending on your disparity computation method
-        #image = median_filter_float32(image, 5) * 255
-        image *= 1160
+        if old:
+            image = image / 65535
+            image *= 1160
+        else:
+            image = image / 10.0  # Adjust scale depending on your disparity computation method
     return image
+
 
 def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
     """
@@ -77,7 +84,7 @@ def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
                              cx=intrinsic_matrix[0, 2], cy=intrinsic_matrix[1, 2])
     # Generate RGBD image from depth and color images
     rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(color_image_o3d, depth_image,
-                                                                    depth_scale=1.0, depth_trunc=1000.0,
+                                                                    depth_scale=1.0, depth_trunc=10000.0,
                                                                     convert_rgb_to_intensity=False)
     # Generate point cloud
     point_cloud = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsic)
@@ -103,22 +110,33 @@ def create_colored_point_cloud(depth_map, color_image, intrinsic_matrix):
     # Destroy the Visualizer window
     vis.destroy_window()
 
+
 if __name__ == "__main__":
-    disparity_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out_baseline_05\\scene_0000\\depth\\37.png"
-    left_file_path = "C:\\Users\\mgjer\\PycharmProjects\\GaussianSplattingViewer\\out_baseline_05\\scene_0000\\left\\37.png"
-    disparity_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\disparity\\IMG_20220818_174000.png"
-    left_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\left\\IMG_20220818_174000.jpg"
+    id = 12
+    scene = "0048"
+    disparity_file_path = f"/home/magnus/phd/gaussian-splatting/SIBR_viewers/install/bin/screenshots/{scene}/disparity/{id}_decoded.tiff"
+    left_file_path = f"/home/magnus/phd/gaussian-splatting/SIBR_viewers/install/bin/screenshots/{scene}/left/{id}.png"
+
+    ## Dataset path
+    id = 6
+    scene = "0041"
+    #disparity_file_path = f"/home/magnus/phd/3dgs/screenshots/{scene}/disparity/{id}_decoded.tiff"
+    #left_file_path = f"/home/magnus/phd/3dgs/screenshots/{scene}/left/{id}.png"
+
+    # disparity_file_path = "/home/magnus/Downloads/data_part1/scene_0000/depth/0.png"
+    # left_file_path = "/home/magnus/Downloads/data_part1/scene_0000/left/0.png"
+    # disparity_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\disparity\\IMG_20220818_174000.png"
+    # left_file_path = "C:\\Users\\mgjer\\Downloads\\stereo_dataset_v1_part1\\0000\\Q\\baseline_0.50\\left\\IMG_20220818_174000.jpg"
     fx = 3439.3083700227126 / 4
     fy = 3445.0110843463276 / 4
     cx = 2320 / 4
     cy = 1044 / 4
-    baseline =  0.5
-    intrinsic_matrix = np.array([[fx, 0, cx ],  # fx, 0, cx
-                                 [0, fy, cy ],  # 0, fy, cy
+    baseline = 1
+    intrinsic_matrix = np.array([[fx, 0, cx],  # fx, 0, cx
+                                 [0, fy, cy],  # 0, fy, cy
                                  [0, 0, 1]])  # Intrinsic matrix of the camera
 
     disparity_image = load_image(disparity_file_path)
-    color_image = load_image(left_file_path, color=True)
+    color_image = load_image(left_file_path, color=True, old=False)
     depth_map = disparity_to_depth(disparity_image, fx, baseline)
     create_colored_point_cloud(depth_map, color_image, intrinsic_matrix)
-
